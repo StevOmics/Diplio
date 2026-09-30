@@ -1,0 +1,627 @@
+{% extends "base.html" %}
+{% block title %} - Libraries{% endblock %}
+{% block content %}
+  <style>
+    .root-note { padding: 0.9rem 1.1rem; margin-bottom: 1.25rem; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.9rem; }
+    .table-input { width: 100%; min-width: 0; }
+    .path-input { min-width: 200px; }
+    .lib-table { width: 100%; font-size: 0.85rem; border-collapse: collapse; }
+    .lib-table th { font-size: 0.7rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-tertiary); text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    .lib-table td { padding: 0.6rem 0.75rem; vertical-align: middle; border-bottom: 1px solid var(--border); }
+    .lib-table tbody tr:last-child td { border-bottom: none; }
+    .lib-table .col-actions { width: 1%; white-space: nowrap; text-align: right; }
+    .lib-table .cell-main { color: var(--text-primary); }
+    .lib-table .cell-sub { font-size: 0.75rem; color: var(--text-tertiary); margin-top: 0.1rem; }
+    .lib-table .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.78rem; word-break: break-all; }
+    .lib-table .status-pill { white-space: nowrap; font-size: 0.72rem; }
+    .lib-table input, .lib-table select { font-size: 0.82rem; padding: 0.3rem 0.5rem; }
+    .lib-table .mini-btn { font-size: 0.75rem; padding: 0.25rem 0.6rem; }
+    .lib-table .danger-text { color: var(--danger); }
+    .lib-table .row-actions { display: flex; gap: 0.4rem; justify-content: flex-end; align-items: center; }
+    .lib-table .row-actions form { margin: 0; }
+    .lib-table .arch-inline { max-width: 16rem; }
+    .lib-table .edit { display: none; }
+    .lib-table tr.editing .edit { display: flex; }
+    .lib-table tr.editing .edit.cell-stack { display: flex; }
+    .lib-table tr.editing .view { display: none; }
+    .lib-table .edit.row-actions { display: none; }
+    .lib-table tr.editing .edit.row-actions { display: flex; }
+    .cell-stack { display: flex; flex-direction: column; gap: 0.4rem; align-items: stretch; }
+    .cell-stack form { margin: 0; }
+    .field-label { font-size: 0.72rem; color: var(--text-tertiary); }
+    .status-pill { white-space: nowrap; }
+    .form-inline { display: flex; gap: 0.5rem; width: 100%; }
+    .breadcrumb-nav { font-size: 0.85rem; color: var(--text-secondary); font-family: ui-monospace, monospace; }
+    .breadcrumb-sep { color: var(--text-tertiary); }
+    .folder-empty { color: var(--text-tertiary); font-size: 0.85rem; padding: 0.5rem 0.75rem; }
+    .folder-list-item-btn { width: 100%; text-align: left; background: transparent; padding: 0.5rem 0.75rem; font-size: 0.9rem; border-radius: var(--radius-sm); }
+    .folder-list-item-btn:hover { background: var(--bg-surface); }
+    .table-empty { color: var(--text-tertiary); text-align: center; padding: 2rem 0; }
+  </style>
+  <h1>Libraries</h1>
+
+  {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+  {% if flash_status == 'ok' %}<p class="success-banner">{{ flash_message }}</p>{% endif %}
+  {% if flash_status == 'error' %}<p class="error-banner">{{ flash_message }}</p>{% endif %}
+
+  <div class="root-note">
+    <strong>Library root:</strong> libraries must be folders under <code>{{ media_root }}</code>, which is the host folder set by
+    <code>FILESYSTEM_ROOT</code> in <code>.env</code> (change it with <code>./setup.sh --configure-media</code>, then restart the containers).
+    Every library added here appears in the Catalog.
+  </div>
+
+  <p class="meta">
+    This page is where you define the libraries that show up in the Catalog, and where you back them up. Each library is backed up to exactly one archive (a bucket, or a folder in one).
+  </p>
+
+  <h2 id="libraries-list" style="margin-top: 2rem;">Libraries</h2>
+  <div style="overflow-x: auto;">
+  <table class="lib-table">
+    <thead>
+      <tr><th>Library</th><th>Source folder</th><th>Archive</th><th>Backup</th><th class="col-actions"></th></tr>
+    </thead>
+    <tbody>
+      {% for entry in library_rows %}
+      {% set loc = entry.location %}
+      <tr id="lib-row-{{ loc.id }}">
+        <td>
+          <div class="view">
+            <div class="cell-main">{{ loc.name }}</div>
+            <div class="cell-sub">{{ loc.media_type }}</div>
+          </div>
+          <div class="edit cell-stack">
+            <input type="text" name="name" form="edit-loc-{{ loc.id }}" value="{{ loc.name }}" class="table-input" required aria-label="Library name">
+            <select name="media_type" form="edit-loc-{{ loc.id }}" class="table-input" aria-label="Media type">
+              {% for mt in media_types %}<option value="{{ mt }}" {% if mt == loc.media_type %}selected{% endif %}>{{ mt }}</option>{% endfor %}
+            </select>
+          </div>
+        </td>
+        <td>
+          <div class="view">
+            <div class="cell-main mono">{{ loc.path }}</div>
+            {% if not entry.exists %}<div class="cell-sub warn">Directory unreachable</div>{% endif %}
+            {% if loc.exclude_globs %}<div class="cell-sub">Excludes: {{ loc.exclude_globs.split('\n') | join(', ') }}</div>{% endif %}
+          </div>
+          <div class="edit cell-stack">
+            <input type="text" name="path" form="edit-loc-{{ loc.id }}" value="{{ loc.path }}" class="table-input" required aria-label="Path">
+            <input type="text" name="exclude_globs" form="edit-loc-{{ loc.id }}" placeholder="Exclude globs, e.g. **/.cache/**" value="{{ loc.exclude_globs or '' }}" class="table-input" aria-label="Exclusions">
+          </div>
+        </td>
+        <td>
+          {# Always-visible archive picker: choosing another configured archive saves immediately. #}
+          <select name="archive_location_id" form="edit-loc-{{ loc.id }}" class="table-input arch-inline" id="arch-sel-{{ loc.id }}" aria-label="Archive"
+                  data-original="{{ entry.archive.id if entry.archive else '' }}" data-library="{{ loc.name }}" onchange="mbChangeArchive({{ loc.id }})">
+            <option value="">No archive</option>
+            {% for a in archives %}
+              <option value="{{ a.id }}" data-type="{{ a.location_type }}" {% if entry.archive and a.id == entry.archive.id %}selected{% endif %}>{{ a.name }} ({% if a.location_type == 'gcs' %}cloud (GCS){% elif a.location_type == 's3' %}cloud (S3){% else %}local{% endif %})</option>
+            {% endfor %}
+          </select>
+          {% if not archives %}<div class="cell-sub">No archives yet &ndash; <a href="/settings#cloud-storage">add one in Settings</a></div>{% endif %}
+          <div class="view">
+            {% if entry.archive and loc.archive_subpath %}<div class="cell-sub">Folder: <span class="mono">/{{ loc.archive_subpath }}</span></div>{% endif %}
+          </div>
+          <div class="edit cell-stack">
+            <div id="arch-folder-{{ loc.id }}" class="cell-stack" style="display: none;">
+              <span class="field-label">Folder in archive</span>
+              <div class="form-inline">
+                <input type="text" name="archive_subpath" form="edit-loc-{{ loc.id }}" id="arch-sub-{{ loc.id }}" value="{{ loc.archive_subpath or '' }}" placeholder="archive root" class="table-input">
+                <button type="button" class="mini-btn" onclick="mbBrowseArchive({{ loc.id }})">Browse&hellip;</button>
+              </div>
+            </div>
+            <span id="arch-folder-note-{{ loc.id }}" class="field-label" style="display: none;">Backed up to the archive's root (folders are for cloud archives).</span>
+          </div>
+        </td>
+        <td>
+          {% if entry.archive %}
+            {% if entry.total %}
+              <span class="status-pill {% if entry.backed_up == entry.total %}status-done{% else %}status-running{% endif %}">{{ entry.backed_up }}/{{ entry.total }}</span>
+            {% else %}
+              <span class="cell-sub">No files</span>
+            {% endif %}
+            <div id="discover-{{ loc.id }}" class="cell-sub" style="margin-top: 0.35rem;" data-report="{{ entry.discover_report_json or '' }}">
+              <button type="button" class="mini-btn" onclick="mbDiscoverBucket({{ loc.id }})">Check bucket</button>
+            </div>
+          {% else %}
+            <span class="cell-sub">&ndash;</span>
+          {% endif %}
+          <div class="view">
+            {% if loc.encrypted == true %}<div class="cell-sub">&#128274; Always encrypted</div>
+            {% elif loc.encrypted == false %}<div class="cell-sub">&#128275; Never encrypted</div>
+            {% elif global_encryption_enabled %}<div class="cell-sub">&#128274; Encrypted (default)</div>
+            {% else %}<div class="cell-sub">&#128275; Not encrypted (default)</div>
+            {% endif %}
+          </div>
+          <div class="edit cell-stack">
+            <span class="field-label">Encryption</span>
+            <select name="encrypted" form="edit-loc-{{ loc.id }}" class="table-input" aria-label="Encryption">
+              <option value="" {% if loc.encrypted is none %}selected{% endif %}>Use default ({{ 'encrypted' if global_encryption_enabled else 'not encrypted' }})</option>
+              <option value="true" {% if loc.encrypted == true %}selected{% endif %}>Always encrypt</option>
+              <option value="false" {% if loc.encrypted == false %}selected{% endif %}>Never encrypt</option>
+            </select>
+            {% if not global_encryption_enabled %}<span class="field-label" style="color: var(--warning, #b45309);">"Always encrypt" needs a master key set up under Settings &gt; Backup Encryption first.</span>{% endif %}
+          </div>
+        </td>
+        <td class="col-actions">
+          <div class="row-actions view">
+            {% if entry.archive %}
+            <form method="post" action="/libraries/{{ loc.id }}/backup" class="form-inline" style="gap: 0.25rem;">
+              <select name="mode" class="table-input" title="Replace older: only back up changed files. Replace all: force re-upload everything.">
+                <option value="replace_older" selected>Replace older</option>
+                <option value="replace_all">Replace all</option>
+              </select>
+              <button type="submit" class="mini-btn" {% if not entry.total %}disabled{% endif %}>Backup</button>
+            </form>
+            {% endif %}
+            <button type="button" class="mini-btn" onclick="mbEditRow({{ loc.id }}, true)">Edit</button>
+            <form method="post" action="/settings/storage-locations/{{ loc.id }}/rescan" class="mb-rescan-form">
+              <button type="submit" class="mini-btn" title="Scan just this library, not the whole catalog">
+                <span class="mb-rescan-spinner" aria-hidden="true" style="display: none;"></span>
+                <span class="mb-rescan-label">Rescan</span>
+              </button>
+            </form>
+            <form method="post" action="/settings/storage-locations/{{ loc.id }}/untrack" onsubmit="return confirm('Stop tracking &quot;{{ loc.name }}&quot;? It stops being scanned, but its catalog entries and cloud backups stay in place and restorable - you can resume tracking it later.');">
+              <button type="submit" class="mini-btn" title="Stop scanning this library without deleting its catalog or cloud backups">Stop tracking</button>
+            </form>
+            <form method="post" action="/settings/storage-locations/{{ loc.id }}/delete" onsubmit="return confirm('Delete &quot;{{ loc.name }}&quot; and drop its indexed files?');">
+              <button type="submit" class="mini-btn danger-text">Delete</button>
+            </form>
+          </div>
+          <div class="row-actions edit">
+            <button type="submit" form="edit-loc-{{ loc.id }}" class="mini-btn">Save</button>
+            <button type="button" class="mini-btn" onclick="mbEditRow({{ loc.id }}, false)">Cancel</button>
+          </div>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="table-empty">No libraries configured yet. Add one below.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% for entry in library_rows %}
+    <form id="edit-loc-{{ entry.location.id }}" method="post" action="/settings/storage-locations/{{ entry.location.id }}/update" hidden></form>
+  {% endfor %}
+
+  {% if untracked_library_rows %}
+  <h2 id="untracked-libraries" style="margin-top: 2rem;">Untracked Libraries</h2>
+  <p class="meta">No longer scanned, but nothing was deleted - their cloud backups are still visible and restorable from the Catalog page at any time.</p>
+  <div style="overflow-x: auto;">
+  <table class="lib-table">
+    <thead>
+      <tr><th>Library</th><th>Last known path</th><th>Backup</th><th class="col-actions"></th></tr>
+    </thead>
+    <tbody>
+      {% for entry in untracked_library_rows %}
+      {% set loc = entry.location %}
+      <tr>
+        <td>
+          <div class="cell-main">{{ loc.name }}</div>
+          <div class="cell-sub">{{ loc.media_type }}</div>
+        </td>
+        <td><div class="cell-main mono">{{ loc.path }}</div></td>
+        <td>
+          {% if entry.total %}
+            <span class="status-pill {% if entry.backed_up == entry.total %}status-done{% else %}status-running{% endif %}">{{ entry.backed_up }}/{{ entry.total }}</span>
+          {% else %}
+            <span class="cell-sub">No files</span>
+          {% endif %}
+        </td>
+        <td class="col-actions">
+          <form method="post" action="/settings/storage-locations/{{ loc.id }}/retrack">
+            <button type="submit" class="mini-btn" title="Start scanning this library again">Resume tracking</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+
+  <h2 id="manage-libraries" style="margin-top: 2rem;">Add a library</h2>
+  <p class="meta">The media type decides which files a scan catalogs here. "Files" is a catch-all for anything else. The folder must be under <code>{{ media_root }}</code>.</p>
+  <form class="toolbar" method="post" action="/settings/storage-locations">
+    <input type="text" name="name" placeholder="Name (e.g. Movies)" required>
+    <div class="form-inline">
+      <input type="text" id="add-storage-path" name="path" placeholder="{{ media_root }}/Movies" class="path-input" required>
+      <button type="button" class="mini-btn" onclick="mbOpenBrowseDialog()">Browse…</button>
+    </div>
+    <select name="media_type">
+      {% for mt in media_types %}<option value="{{ mt }}">{{ mt }}</option>{% endfor %}
+    </select>
+    <button type="submit" class="btn scan-btn">Add Library</button>
+  </form>
+
+  {% if discovered_folders %}
+  <h3>Unmapped directories</h3>
+  <p class="meta">Folders found directly under <code>{{ media_root }}</code> that aren't libraries yet.</p>
+  <table>
+    <thead><tr><th>Directory</th><th></th></tr></thead>
+    <tbody>
+      {% for folder in discovered_folders %}
+      <tr>
+        <td class="text-mono">{{ folder.name }}</td>
+        <td style="text-align: right;">
+          {% if folder.already_added %}
+            <span class="status-pill status-done">Indexed</span>
+          {% else %}
+            <form method="post" action="/settings/storage-locations">
+              <input type="hidden" name="name" value="{{ folder.name }}">
+              <input type="hidden" name="path" value="{{ folder.path }}">
+              <button type="submit" class="mini-btn">Add</button>
+            </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <h2 id="archives" style="margin-top: 2.5rem;">Archives</h2>
+  <p class="meta">
+    Archives are where backups are stored. Each library below is assigned to exactly one.
+    To add, change or remove archives, go to
+    <a href="/settings#cloud-storage"><strong>Settings &rarr; Cloud Storage</strong></a>.
+  </p>
+  <div style="overflow-x: auto;">
+  <table>
+    <thead><tr><th>Name</th><th>Type</th><th>Path</th><th>Used by</th></tr></thead>
+    <tbody>
+      {% for row in archive_rows %}
+      <tr>
+        <td>{{ row.location.name }}</td>
+        <td><span class="status-pill {% if row.kind == 'Cloud' %}status-running{% else %}status-pending{% endif %}">{{ row.kind }}</span></td>
+        <td><code>{{ row.location.path }}</code>{% if not row.exists %} <span class="warn">not found</span>{% endif %}</td>
+        <td>{% if row.libraries %}{{ row.libraries | join(', ') }}{% else %}<span class="meta">no libraries</span>{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="table-empty">No archives yet. <a href="/settings#cloud-storage">Add one in Settings &rarr; Cloud Storage</a>.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <!-- Browse Dialog -->
+  <dialog id="browse-folders-dialog" class="browse-dialog">
+    <div class="browse-dialog-header">
+      <nav id="browse-breadcrumb" aria-label="Path"></nav>
+    </div>
+    <div class="browse-dialog-body">
+      <ul id="browse-folder-list"></ul>
+    </div>
+    <form method="dialog" class="browse-dialog-footer">
+      <button type="submit" class="mini-btn">Cancel</button>
+      <button type="button" class="btn scan-btn" style="font-size: 0.8rem; padding: 0.3rem 0.75rem;" onclick="mbSelectCurrentFolder()">Select Directory</button>
+    </form>
+  </dialog>
+  <script>
+    const MB_MEDIA_ROOT = {{ media_root|tojson }};
+    let mbBrowseCurrentPath = MB_MEDIA_ROOT;
+
+    let mbBrowseTargetId = "add-storage-path";
+    function mbOpenBrowseDialog(targetId) {
+      mbBrowseTargetId = targetId || "add-storage-path";
+      const startPath = document.getElementById(mbBrowseTargetId).value.trim() || MB_MEDIA_ROOT;
+      mbLoadBrowseFolders(startPath);
+      document.getElementById("browse-folders-dialog").showModal();
+    }
+
+    async function mbLoadBrowseFolders(path) {
+      const url = "/settings/browse-folders?path=" + encodeURIComponent(path);
+      const response = await fetch(url);
+      if (!response.ok) {
+        if (path !== MB_MEDIA_ROOT) return mbLoadBrowseFolders(MB_MEDIA_ROOT);
+        return;
+      }
+      const data = await response.json();
+      mbBrowseCurrentPath = data.path;
+      mbRenderBreadcrumb(data.path);
+      mbRenderFolderList(data.folders);
+    }
+
+    function mbRenderBreadcrumb(path) {
+      const breadcrumb = document.getElementById("browse-breadcrumb");
+      breadcrumb.replaceChildren();
+      if (!path.startsWith(MB_MEDIA_ROOT)) return;
+
+      const relative = path.slice(MB_MEDIA_ROOT.length).split("/").filter(Boolean);
+      const rootLabel = MB_MEDIA_ROOT.split("/").filter(Boolean).pop() || MB_MEDIA_ROOT;
+      let runningPath = MB_MEDIA_ROOT;
+
+      const addSegment = (label, segmentPath) => {
+        if (breadcrumb.childElementCount > 0) {
+          const sep = document.createElement("span");
+          sep.textContent = " / ";
+          sep.className = "breadcrumb-sep";
+          breadcrumb.appendChild(sep);
+        }
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "mini-btn";
+        btn.style.border = "none";
+        btn.style.background = "transparent";
+        btn.textContent = label;
+        btn.addEventListener("click", () => mbLoadBrowseFolders(segmentPath));
+        breadcrumb.appendChild(btn);
+      };
+
+      addSegment(rootLabel, MB_MEDIA_ROOT);
+      for (const part of relative) {
+        runningPath += "/" + part;
+        addSegment(part, runningPath);
+      }
+    }
+
+    function mbRenderFolderList(folders) {
+      const list = document.getElementById("browse-folder-list");
+      list.replaceChildren();
+      if (folders.length === 0) {
+        const empty = document.createElement("li");
+        empty.className = "folder-empty";
+        empty.textContent = "Directory is empty.";
+        list.appendChild(empty);
+        return;
+      }
+      for (const folder of folders) {
+        const item = document.createElement("li");
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "folder-list-item-btn";
+        button.textContent = folder.name;
+        button.addEventListener("click", () => mbLoadBrowseFolders(folder.path));
+        item.appendChild(button);
+        list.appendChild(item);
+      }
+    }
+
+    function mbSelectCurrentFolder() {
+      document.getElementById(mbBrowseTargetId).value = mbBrowseCurrentPath;
+      document.getElementById("browse-folders-dialog").close();
+    }
+  </script>
+
+  <!-- Archive subfolder browser (cloud archives) -->
+  <dialog id="archive-browse-dialog" class="browse-dialog">
+    <div class="browse-dialog-header">
+      <nav id="archive-browse-breadcrumb" aria-label="Archive path"></nav>
+    </div>
+    <div class="browse-dialog-body">
+      <ul id="archive-browse-list"></ul>
+    </div>
+    <div class="browse-dialog-footer" style="gap: 0.5rem; justify-content: flex-start;">
+      <input type="text" id="archive-new-folder" placeholder="New folder name" style="flex: 1;">
+      <button type="button" class="mini-btn" onclick="mbCreateArchiveFolder()">Create folder</button>
+    </div>
+    <form method="dialog" class="browse-dialog-footer">
+      <button type="submit" class="mini-btn">Cancel</button>
+      <button type="button" class="btn scan-btn" style="font-size: 0.8rem; padding: 0.3rem 0.75rem;" onclick="mbSelectArchiveFolder()">Select Folder</button>
+    </form>
+  </dialog>
+  <script>
+    let mbArchiveLibId = null;
+    let mbArchiveId = null;
+    let mbArchiveRel = "";
+
+    function mbBrowseArchive(libId) {
+      const sel = document.getElementById("arch-sel-" + libId);
+      if (!sel.value) { alert("Choose an archive for this library first."); return; }
+      if (!["gcs", "s3"].includes(sel.selectedOptions[0].dataset.type)) {
+        alert("Subfolders are only supported on cloud archives for now.");
+        return;
+      }
+      mbArchiveLibId = libId;
+      mbArchiveId = sel.value;
+      mbLoadArchiveFolders((document.getElementById("arch-sub-" + libId).value || "").trim().replace(/^\/+|\/+$/g, ""));
+      document.getElementById("archive-browse-dialog").showModal();
+    }
+
+    async function mbLoadArchiveFolders(rel) {
+      const list = document.getElementById("archive-browse-list");
+      const response = await fetch("/libraries/browse-archive?archive_id=" + encodeURIComponent(mbArchiveId) + "&path=" + encodeURIComponent(rel));
+      if (!response.ok) {
+        const detail = (await response.json().catch(() => ({}))).detail || "Could not list this folder";
+        list.innerHTML = "";
+        const li = document.createElement("li");
+        li.className = "folder-empty";
+        li.textContent = detail;
+        list.appendChild(li);
+        if (rel) return mbLoadArchiveFolders("");
+        return;
+      }
+      const data = await response.json();
+      mbArchiveRel = data.path;
+
+      const crumb = document.getElementById("archive-browse-breadcrumb");
+      crumb.innerHTML = "";
+      const root = document.createElement("button");
+      root.type = "button"; root.className = "mini-btn"; root.textContent = data.archive;
+      root.onclick = () => mbLoadArchiveFolders("");
+      crumb.appendChild(root);
+      let acc = "";
+      data.path.split("/").filter(Boolean).forEach(part => {
+        acc = acc ? acc + "/" + part : part;
+        const target = acc;
+        crumb.appendChild(document.createTextNode(" / "));
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "mini-btn"; b.textContent = part;
+        b.onclick = () => mbLoadArchiveFolders(target);
+        crumb.appendChild(b);
+      });
+
+      list.innerHTML = "";
+      if (!data.folders.length) {
+        const li = document.createElement("li");
+        li.className = "folder-empty";
+        li.textContent = "No subfolders here. Select this folder, or create a new one below.";
+        list.appendChild(li);
+      }
+      data.folders.forEach(name => {
+        const li = document.createElement("li");
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "folder-list-item-btn"; b.textContent = name + "/";
+        b.onclick = () => mbLoadArchiveFolders(data.path ? data.path + "/" + name : name);
+        li.appendChild(b);
+        list.appendChild(li);
+      });
+    }
+
+    async function mbCreateArchiveFolder() {
+      const input = document.getElementById("archive-new-folder");
+      const name = input.value.trim();
+      if (!name) { input.focus(); return; }
+      const body = new FormData();
+      body.append("archive_id", mbArchiveId);
+      body.append("path", mbArchiveRel);
+      body.append("name", name);
+      const response = await fetch("/libraries/archive-folders", { method: "POST", body });
+      if (!response.ok) {
+        alert((await response.json().catch(() => ({}))).detail || "Could not create the folder");
+        return;
+      }
+      input.value = "";
+      mbLoadArchiveFolders((await response.json()).path);
+    }
+
+    function mbChangeArchive(libId) {
+      const sel = document.getElementById("arch-sel-" + libId);
+      const name = sel.dataset.library;
+      const target = sel.value ? sel.selectedOptions[0].textContent.trim() : "no archive";
+      const ok = confirm(
+        "Change the archive for \"" + name + "\" to " + target + "?\n\n" +
+        "Backups already made stay in the previous archive. New backups of this library go to the new one, and files will be backed up again there."
+      );
+      if (!ok) { sel.value = sel.dataset.original; return; }
+      // A folder belongs to one archive; start at the new archive's root.
+      document.getElementById("arch-sub-" + libId).value = "";
+      document.getElementById("edit-loc-" + libId).requestSubmit();
+    }
+
+    // Renders one discover-bucket result (from a live check or the cached
+    // result auto-shown on page load) into `box`, with the A/B/C prompt:
+    // (A) Sync, (B) pick a different folder (reuses the existing edit-row
+    // path field), (C) Ignore for now (dismiss - client-side only, reappears
+    // next page load; see docs/TODO.md for a "permanently silence" follow-up).
+    function mbRenderDiscoverResult(libId, box, j) {
+      box.replaceChildren();
+      if (j.found_count > 0) {
+        const msg = document.createElement("div");
+        msg.textContent = j.found_count + " file(s) (" + j.found_size + ") already backed up at " + j.location + " aren't in this library yet.";
+        box.append(msg);
+
+        const actions = document.createElement("div");
+        actions.style.marginTop = "0.25rem";
+
+        const sync = document.createElement("button");
+        sync.type = "button";
+        sync.className = "mini-btn";
+        sync.textContent = "Sync " + j.found_count + " from bucket";
+        sync.onclick = () => mbSyncFromBucket(libId, j.found_count);
+        actions.append(sync);
+
+        const pickFolder = document.createElement("button");
+        pickFolder.type = "button";
+        pickFolder.className = "mini-btn";
+        pickFolder.textContent = "Pick a different folder";
+        pickFolder.title = "Point this library's local path at a different folder before syncing";
+        pickFolder.onclick = () => mbEditRow(libId, true);
+        actions.append(pickFolder);
+        box.append(actions);
+      } else if (j.archive_count > 0) {
+        box.append(document.createTextNode(j.archive_count + " archive(s) at " + j.location + ", all already in this library's catalog."));
+      } else {
+        box.append(document.createTextNode("Nothing found at " + j.location + "."));
+      }
+      if (j.no_index_count) {
+        const warn = document.createElement("div");
+        warn.style.color = "var(--warning, #b45309)";
+        warn.textContent = j.no_index_count + " archive object(s) there have no index file and can't be synced.";
+        box.append(warn);
+      }
+      if (j.key_status === "no_match" || j.key_status === "mixed") {
+        const warn = document.createElement("div");
+        warn.style.color = "var(--warning, #b45309)";
+        const link = document.createElement("a");
+        link.href = "/settings#backup-encryption";
+        link.textContent = "Settings > Backup Encryption";
+        warn.append((j.key_message || "This content's master key doesn't match.") + " See ", link, ".");
+        const ignore = document.createElement("button");
+        ignore.type = "button";
+        ignore.className = "mini-btn";
+        ignore.style.marginLeft = "0.35rem";
+        ignore.textContent = "Ignore for now";
+        ignore.onclick = () => warn.remove();
+        box.append(warn, ignore);
+      }
+      const again = document.createElement("button");
+      again.type = "button";
+      again.className = "mini-btn";
+      again.style.marginTop = "0.35rem";
+      again.textContent = "Check bucket";
+      again.onclick = () => mbDiscoverBucket(libId);
+      box.append(again);
+    }
+
+    function mbDiscoverBucket(libId) {
+      const box = document.getElementById("discover-" + libId);
+      const button = box.querySelector("button");
+      button.disabled = true;
+      const original = button.textContent;
+      button.textContent = "Checking...";
+      fetch("/libraries/" + libId + "/discover-bucket", { method: "POST" })
+        .then(r => r.json().then(j => ({ ok: r.ok, j })))
+        .then(({ ok, j }) => {
+          if (!ok) { box.replaceChildren(document.createTextNode(j.error || "Check failed")); return; }
+          mbRenderDiscoverResult(libId, box, j);
+        })
+        .catch(() => { box.replaceChildren(document.createTextNode("Check failed")); })
+        .finally(() => { if (button.isConnected) { button.disabled = false; button.textContent = original; } });
+    }
+
+    // Auto-show any cached discover-bucket result on page load, instead of
+    // requiring the manual button first (docs/backup-plan/steps/18-portability.md).
+    document.querySelectorAll("[id^='discover-'][data-report]").forEach(box => {
+      const raw = box.dataset.report;
+      if (!raw) return;
+      const libId = box.id.replace("discover-", "");
+      try {
+        mbRenderDiscoverResult(libId, box, JSON.parse(raw));
+      } catch (e) { /* malformed cache, ignore - manual "Check bucket" button stays */ }
+    });
+
+    function mbSyncFromBucket(libId, count) {
+      if (!confirm("Restore " + count + " file(s) from the bucket into this library? This downloads them and writes them to the library's local folder, overwriting anything already at the same path.")) return;
+      fetch("/libraries/" + libId + "/sync-from-bucket", { method: "POST" })
+        .then(r => r.json().then(j => ({ ok: r.ok, j })))
+        .then(({ ok, j }) => {
+          if (!ok) { alert(j.error || "Couldn't start the sync"); return; }
+          window.location.href = "/copy-jobs";
+        })
+        .catch(() => alert("Couldn't start the sync"));
+    }
+
+    function mbEditRow(libId, on) {
+      const row = document.getElementById("lib-row-" + libId);
+      if (on) { row.classList.add("editing"); mbSyncFolderRow(libId); }
+      else { window.location.reload(); }   // Cancel: drop unsaved edits by re-rendering
+    }
+
+    function mbSyncFolderRow(libId) {
+      const sel = document.getElementById("arch-sel-" + libId);
+      const type = sel.value ? sel.selectedOptions[0].dataset.type : "";
+      const isCloud = type === "gcs" || type === "s3";
+      document.getElementById("arch-folder-" + libId).style.display = isCloud ? "" : "none";
+      document.getElementById("arch-folder-note-" + libId).style.display = type === "local" ? "" : "none";
+      // Folders only apply to cloud archives; don't submit a stale value otherwise.
+      if (!isCloud) document.getElementById("arch-sub-" + libId).value = "";
+    }
+    document.addEventListener("DOMContentLoaded", () => {
+      document.querySelectorAll("select[id^='arch-sel-']").forEach(sel => mbSyncFolderRow(sel.id.replace("arch-sel-", "")));
+    });
+
+    function mbSelectArchiveFolder() {
+      document.getElementById("arch-sub-" + mbArchiveLibId).value = mbArchiveRel;
+      document.getElementById("archive-browse-dialog").close();
+    }
+  </script>
+{% endblock %}

@@ -1,0 +1,329 @@
+{% extends "base.html" %}
+{% block title %} - Media Catalog{% endblock %}
+{% block content %}
+  <h1>Media Catalog</h1>
+  {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+  {% if message %}<p class="success-banner">{{ message }}</p>{% endif %}
+  <p class="meta">{{ total_items }} file(s) cataloged{% if library %} in "{{ library }}"{% endif %}{% if genre %} / "{{ genre }}"{% endif %}{% if media_type %} / type "{{ media_type }}"{% endif %}{% if q %} matching "{{ q }}"{% endif %}{% if total_pages > 1 %} — Showing {{ movies|length }} per page{% endif %}</p>
+
+  <form class="toolbar" method="get" action="/catalog">
+    {% if folder %}<input type="hidden" name="folder" value="{{ folder }}">{% endif %}
+    <input type="text" name="q" placeholder="Search filename..." value="{{ q or '' }}">
+    <select name="library">
+      <option value="">All libraries</option>
+      {% for l in libraries %}
+        <option value="{{ l }}" {% if l == library %}selected{% endif %}>{{ l }}</option>
+      {% endfor %}
+    </select>
+    <select name="genre">
+      <option value="">All genres</option>
+      {% for g in genres %}
+        <option value="{{ g }}" {% if g == genre %}selected{% endif %}>{{ g }}</option>
+      {% endfor %}
+    </select>
+    {% if cataloged_media_types|length > 1 %}
+    <select name="media_type">
+      <option value="">All types</option>
+      {% for mt in cataloged_media_types %}
+        <option value="{{ mt }}" {% if mt == media_type %}selected{% endif %}>{{ mt }}</option>
+      {% endfor %}
+    </select>
+    {% endif %}
+    <button type="submit">Filter</button>
+    <a href="/catalog" class="mini-btn" style="text-decoration: none; padding: 0.4rem 0.8rem;">Clear filters</a>
+  </form>
+
+  {% if is_files_browse %}
+  <nav class="meta" style="margin-bottom: 1rem;">
+    <a href="?library={{ folder_library | urlencode }}{% if media_type %}&media_type={{ media_type | urlencode }}{% endif %}{% if q %}&q={{ q | urlencode }}{% endif %}">{{ folder_library }}</a>
+    {% for crumb in folder_data.breadcrumbs %}
+      / <a href="?library={{ folder_library | urlencode }}&folder={{ crumb.path | urlencode }}{% if media_type %}&media_type={{ media_type | urlencode }}{% endif %}{% if q %}&q={{ q | urlencode }}{% endif %}">{{ crumb.name }}</a>
+    {% endfor %}
+  </nav>
+  {% endif %}
+
+  <form class="toolbar mb-rescan-form" method="post" action="/scan-and-redirect">
+    <button class="scan-btn" type="submit">
+      <span class="mb-rescan-spinner" aria-hidden="true" style="display: none;"></span>
+      <span class="mb-rescan-label">Rescan files</span>
+    </button>
+  </form>
+
+  <form id="bulk-actions-form" method="post" action="/movies/bulk-backup-cloud" class="toolbar" style="align-items: center;"
+        onsubmit="setTimeout(() => { window.location.href = '/copy-jobs'; }, 500);">
+    <input type="hidden" name="select_all_library" id="select-all-library-field" value="">
+    {% if folder_library %}<input type="hidden" name="folder_library" value="{{ folder_library }}">{% endif %}
+    <a href="?q={{ q or '' }}&genre={{ genre or '' }}&library={{ library or '' }}&media_type={{ media_type or '' }}&folder={{ folder or '' }}&select_all=1"
+       onclick="document.getElementById('select-all-library-field').value = '';">Select all (this view)</a>
+    <a href="?q={{ q or '' }}&genre={{ genre or '' }}&library={{ library or '' }}&media_type={{ media_type or '' }}&folder={{ folder or '' }}"
+       onclick="document.getElementById('select-all-library-field').value = '';">Select none</a>
+    {% if folder_library %}
+    <a href="#" id="select-all-library-link" data-library="{{ folder_library }}"
+       title="Selects every file in &quot;{{ folder_library }}&quot;, including files in subfolders and on other pages - not just what's currently shown">
+      Select ALL in "{{ folder_library }}" (incl. subfolders)
+    </a>
+    {% endif %}
+    <span style="color: #ccc;">|</span>
+    {% if file_archive %}
+      <select name="mode" title="Replace older: skip unchanged files on backup, don't overwrite newer local files on restore. Replace all: force everything, unconditionally.">
+        <option value="replace_older" selected>Replace older</option>
+        <option value="replace_all">Replace all</option>
+      </select>
+      <button type="submit" class="mini-btn" onclick="return confirm('Start backup for selected files? You will be taken to Jobs to monitor progress.');">Backup</button>
+      <button type="submit" formaction="/movies/bulk-restore-cloud" class="mini-btn"
+              onclick="return confirm('Restore will overwrite the current files at their original locations with cloud backups. Continue?');">Restore</button>
+      <button type="submit" formaction="/movies/bulk-verify-cloud" class="mini-btn"
+              onclick="return confirm('Verify backups for selected files? This checks the bucket objects and samples the start and end of each file.');">Verify</button>
+      <button type="submit" formaction="/movies/bulk-verify-cloud?deep=true" class="mini-btn"
+              onclick="return confirm('Deep verify downloads and re-hashes every selected file from the bucket. This can take a long time and uses bandwidth. Continue?');">Deep verify</button>
+    {% else %}
+      <span class="warn">Assign an archive to a library on the <a href="/libraries">Libraries</a> page to enable backups</span>
+    {% endif %}
+  </form>
+
+  <div class="toolbar" style="margin-bottom: 1rem;">
+    <button type="button" id="view-list-btn" class="mini-btn">List</button>
+    <button type="button" id="view-thumbnails-btn" class="mini-btn">Thumbnails</button>
+  </div>
+
+  <div id="thumbnail-view" class="thumbnail-grid" style="display: none;">
+    {% if is_files_browse %}
+    {% for name, count in folder_data.subfolders %}
+    {% set folder_path = (folder + '/' + name) if folder else name %}
+    <div class="thumbnail-card">
+      <label class="thumbnail-select" title="Select this folder and everything in it for backup operations">
+        <input type="checkbox" name="selected_folders" value="{{ folder_path }}" form="bulk-actions-form" {% if select_all %}checked{% endif %}>
+      </label>
+      <a style="text-decoration: none; color: inherit; display: block;"
+         href="?library={{ folder_library | urlencode }}&folder={{ folder_path | urlencode }}{% if media_type %}&media_type={{ media_type | urlencode }}{% endif %}{% if q %}&q={{ q | urlencode }}{% endif %}">
+        <div class="thumbnail-image"><div class="thumbnail-icon">&#128193;</div></div>
+        <div class="thumbnail-title">{{ name }}</div>
+        <div class="thumbnail-meta">{{ count }} item{{ "s" if count != 1 else "" }}</div>
+      </a>
+    </div>
+    {% endfor %}
+    {% endif %}
+    {% for m in movies %}
+    {% set is_photo = m.media_type == 'photos' %}
+    <div class="thumbnail-card">
+      <label class="thumbnail-select">
+        <input type="checkbox" name="media_file_ids" value="{{ m.id }}" form="bulk-actions-form" {% if select_all %}checked{% endif %}>
+      </label>
+      <div class="thumbnail-image">
+        {% if is_photo %}
+          <img src="/movies/{{ m.id }}/thumbnail" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'), {className: 'thumbnail-icon', textContent: '\u{1F5BC}'}))">
+        {% else %}
+          <div class="thumbnail-icon">
+            {% if m.media_type == 'movies' %}&#127909;
+            {% elif m.media_type == 'music' %}&#127925;
+            {% elif m.media_type == 'documents' %}&#128196;
+            {% else %}&#128196;
+            {% endif %}
+          </div>
+        {% endif %}
+        {% if m.is_missing %}<span class="status-pill status-failed thumbnail-badge" title="No longer on disk">deleted</span>{% endif %}
+      </div>
+      <div class="thumbnail-title" title="{{ m.title or m.filename }}">{% if m.watched %}&#10003; {% endif %}{{ m.title or m.filename }}{% if m.year %} ({{ m.year }}){% endif %}</div>
+      <div class="thumbnail-meta">{{ "%.1f"|format(m.size_bytes / 1048576) }} MB</div>
+    </div>
+    {% endfor %}
+    {% if not movies and not (is_files_browse and folder_data.subfolders) %}<p class="meta">No files match the current filters.</p>{% endif %}
+  </div>
+
+  <div id="list-view" style="overflow-x: auto;">
+  <table>
+    <thead>
+      <tr><th></th><th>ID</th><th>Title</th><th>Type</th><th>Locations</th><th>Rating</th><th>Library / Genre</th><th>Size</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      {% if is_files_browse %}
+      {% for name, count in folder_data.subfolders %}
+      {% set folder_path = (folder + '/' + name) if folder else name %}
+      <tr>
+        <td><input type="checkbox" name="selected_folders" value="{{ folder_path }}" form="bulk-actions-form" {% if select_all %}checked{% endif %}
+                   title="Select this folder and everything in it for backup operations"></td>
+        <td></td>
+        <td>
+          <a href="?library={{ folder_library | urlencode }}&folder={{ folder_path | urlencode }}{% if media_type %}&media_type={{ media_type | urlencode }}{% endif %}{% if q %}&q={{ q | urlencode }}{% endif %}">
+            &#128193; {{ name }}/
+          </a>
+        </td>
+        <td>-</td>
+        <td>-</td>
+        <td>-</td>
+        <td>-</td>
+        <td>{{ count }} item{{ "s" if count != 1 else "" }}</td>
+        <td>-</td>
+      </tr>
+      {% endfor %}
+      {% endif %}
+      {% for m in movies %}
+      {% set archive = file_archive.get(m.id) %}
+      {% set has_cloud_backup = archive and ((m.id, archive.id) in v2_backed) %}
+      {% set source_location = storage_location_by_id.get(m.storage_location_id) %}
+      <tr>
+        <td><input type="checkbox" name="media_file_ids" value="{{ m.id }}" form="bulk-actions-form" {% if select_all %}checked{% endif %}></td>
+        <td><code style="font-size: 0.8rem;">{{ m.id }}</code></td>
+        <td>
+          <span title="{{ m.path }}&#10;fingerprint: {{ m.fingerprint or 'n/a' }}&#10;uuid: {{ m.uuid }}">
+            {% if m.watched %}&#10003; {% endif %}{{ m.title or m.filename }}{% if m.year %} ({{ m.year }}){% endif %}
+          </span>
+          {% if m.is_missing %}<span class="status-pill status-failed" title="No longer on disk - only the backup copy remains">deleted locally</span>{% endif %}
+        </td>
+        <td><span class="status-pill">{{ m.media_type }}</span></td>
+        <td>
+          <div>{{ source_location.name if source_location else "unknown" }}</div>
+          {% for loc_job in file_locations.get(m.id, []) %}
+          <div style="margin-left: 1rem; font-size: 0.8rem; color: #666;">
+            &#8627; {{ storage_location_by_id[loc_job.destination_storage_location_id].name if loc_job.destination_storage_location_id in storage_location_by_id else "unknown" }}
+            <span class="status-pill status-done">backed up</span>{% if loc_job.encrypted %} &#128274;{% endif %}{% if loc_job.compression %} <span title="stored gzip-compressed">(gz)</span>{% endif %}
+            {% if loc_job.verify_status == 'match' %}
+              <span class="status-pill status-done" title="verified {{ loc_job.verified_at }}">verified</span>
+            {% elif loc_job.verify_status == 'mismatch' %}
+              <span class="status-pill status-failed" title="verified {{ loc_job.verified_at }}">mismatch</span>
+            {% elif loc_job.verify_status == 'missing' %}
+              <span class="status-pill status-failed" title="verified {{ loc_job.verified_at }}">missing</span>
+            {% elif loc_job.verify_status == 'changed' %}
+              <span class="status-pill status-running" title="verified {{ loc_job.verified_at }} - the local file has changed since it was backed up">changed</span>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </td>
+        <td>{{ "%.1f"|format(m.rating) if m.rating else "-" }}</td>
+        <td>{{ [source_location.name if source_location else none, m.genre] | select | join(' / ') or "-" }}</td>
+        <td>{{ "%.1f"|format(m.size_bytes / 1048576) }} MB</td>
+        <td>
+          {% if archive %}
+            <div class="action-group">
+              <div class="action-grid">
+                <form method="post" action="/movies/{{ m.id }}/backup-cloud"
+                      onsubmit="setTimeout(() => { window.location.href = '/copy-jobs'; }, 500);">
+                  <button type="submit" class="mini-btn"
+                    {% if m.storage_location_id == archive.id or m.is_missing %}disabled{% endif %}>Backup</button>
+                </form>
+                <form method="post" action="/movies/{{ m.id }}/restore-cloud"
+                      onsubmit="return confirm('Restore will overwrite the current file at its original location with the cloud backup copy. Continue?');" style="display: inline;">
+                  <button type="submit" class="mini-btn" {% if not has_cloud_backup %}disabled{% endif %}>Restore</button>
+                </form>
+                <form method="post" action="/movies/{{ m.id }}/verify-cloud" style="display: inline;">
+                  <button type="submit" class="mini-btn" {% if not has_cloud_backup %}disabled{% endif %}>Verify</button>
+                </form>
+              </div>
+            </div>
+          {% else %}
+            <span class="warn">No archive for this library - <a href="/libraries">assign one</a></span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  {% if total_pages > 1 %}
+  <div style="margin-top: 1.5rem; display: flex; gap: 0.5rem; align-items: center; justify-content: center;">
+    {% if page > 1 %}
+      <a href="/catalog?page=1{% if q %}&q={{ q }}{% endif %}{% if library %}&library={{ library }}{% endif %}{% if genre %}&genre={{ genre }}{% endif %}{% if media_type %}&media_type={{ media_type }}{% endif %}{% if folder %}&folder={{ folder }}{% endif %}" class="mini-btn">« First</a>
+      <a href="/catalog?page={{ page - 1 }}{% if q %}&q={{ q }}{% endif %}{% if library %}&library={{ library }}{% endif %}{% if genre %}&genre={{ genre }}{% endif %}{% if media_type %}&media_type={{ media_type }}{% endif %}{% if folder %}&folder={{ folder }}{% endif %}" class="mini-btn">‹ Previous</a>
+    {% endif %}
+    <span style="margin: 0 1rem;">Page {{ page }} of {{ total_pages }}</span>
+    {% if page < total_pages %}
+      <a href="/catalog?page={{ page + 1 }}{% if q %}&q={{ q }}{% endif %}{% if library %}&library={{ library }}{% endif %}{% if genre %}&genre={{ genre }}{% endif %}{% if media_type %}&media_type={{ media_type }}{% endif %}{% if folder %}&folder={{ folder }}{% endif %}" class="mini-btn">Next ›</a>
+      <a href="/catalog?page={{ total_pages }}{% if q %}&q={{ q }}{% endif %}{% if library %}&library={{ library }}{% endif %}{% if genre %}&genre={{ genre }}{% endif %}{% if media_type %}&media_type={{ media_type }}{% endif %}{% if folder %}&folder={{ folder }}{% endif %}" class="mini-btn">Last »</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+<style>
+  .thumbnail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+  .thumbnail-card {
+    position: relative;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 0.5rem;
+    background: var(--bg-surface);
+  }
+  .thumbnail-select { position: absolute; top: 0.5rem; left: 0.5rem; z-index: 1; }
+  .thumbnail-image {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-surface-hover);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    margin-bottom: 0.5rem;
+  }
+  .thumbnail-image img { width: 100%; height: 100%; object-fit: cover; }
+  .thumbnail-icon { font-size: 2.5rem; }
+  .thumbnail-badge { position: absolute; bottom: 0.3rem; right: 0.3rem; }
+  .thumbnail-title { font-size: 0.85rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .thumbnail-meta { font-size: 0.75rem; color: var(--text-secondary); }
+</style>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const form = document.querySelector('form.toolbar[method="get"]');
+  if (form) {
+    const selects = form.querySelectorAll('select[name="library"], select[name="media_type"], select[name="genre"]');
+    selects.forEach(select => {
+      select.addEventListener('change', () => {
+        // A folder path only makes sense within the library it came from.
+        if (select.name === 'library') {
+          const folderInput = form.querySelector('input[name="folder"]');
+          if (folderInput) folderInput.remove();
+        }
+        form.submit();
+      });
+    });
+  }
+
+  // "Select ALL in library" overrides whatever's checked with every file in
+  // the library server-side (see _resolve_bulk_selection in main.py) - the
+  // checkboxes only ever cover what's rendered (current folder/page), so
+  // ticking them all isn't the same as selecting the whole library.
+  const selectAllLibraryLink = document.getElementById('select-all-library-link');
+  if (selectAllLibraryLink) {
+    selectAllLibraryLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      document.getElementById('select-all-library-field').value = selectAllLibraryLink.dataset.library;
+      document.querySelectorAll('input[form="bulk-actions-form"]').forEach(cb => { cb.checked = true; });
+      if (!selectAllLibraryLink.dataset.selected) {
+        selectAllLibraryLink.textContent += ' ✓';
+        selectAllLibraryLink.dataset.selected = '1';
+      }
+    });
+  }
+
+  // Windows-Explorer-style view toggle. Defaults to Thumbnails for a photos
+  // filter (adapts to file type per the Catalog design), List otherwise, and
+  // remembers the user's explicit choice per media_type across visits.
+  const listView = document.getElementById('list-view');
+  const thumbnailView = document.getElementById('thumbnail-view');
+  const listBtn = document.getElementById('view-list-btn');
+  const thumbnailBtn = document.getElementById('view-thumbnails-btn');
+  const mediaType = '{{ media_type or "" }}';
+  const storageKey = 'catalog-view:' + (mediaType || 'all');
+
+  function setView(view) {
+    listView.style.display = view === 'list' ? '' : 'none';
+    thumbnailView.style.display = view === 'thumbnails' ? '' : 'none';
+    listBtn.classList.toggle('active', view === 'list');
+    thumbnailBtn.classList.toggle('active', view === 'thumbnails');
+  }
+
+  const savedView = localStorage.getItem(storageKey);
+  setView(savedView || (mediaType === 'photos' ? 'thumbnails' : 'list'));
+
+  listBtn.addEventListener('click', () => { setView('list'); localStorage.setItem(storageKey, 'list'); });
+  thumbnailBtn.addEventListener('click', () => { setView('thumbnails'); localStorage.setItem(storageKey, 'thumbnails'); });
+});
+</script>
+
+{% endblock %}

@@ -1,0 +1,624 @@
+{% extends "base.html" %}
+{% block title %} - Settings{% endblock %}
+{% block content %}
+  <h1>Settings</h1>
+
+  {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+  {% if flash_status == 'ok' %}<p class="success-banner">{{ flash_message }}</p>{% endif %}
+  {% if flash_status == 'error' %}<p class="error-banner">{{ flash_message }}</p>{% endif %}
+
+  <section class="card" id="storage-locations">
+  <h2>Storage locations</h2>
+  <p class="meta">
+    Local folders to scan for media. Paths must be reachable inside the web container (currently everything under
+    <code>{{ media_root }}</code>). Backup targets and per-library backup status/actions moved to the
+    <a href="/libraries">Libraries</a> page.
+  </p>
+
+  <table>
+    <thead>
+      <tr><th>Name</th><th>Type</th><th>Media type</th><th>Path</th><th>Excludes</th><th></th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for entry in storage_locations %}
+      <tr>
+        <td><input type="text" name="name" form="edit-loc-{{ entry.location.id }}" value="{{ entry.location.name }}" required></td>
+        <td>Local</td>
+        <td>
+          <select name="media_type" form="edit-loc-{{ entry.location.id }}">
+            {% for mt in media_types %}
+              <option value="{{ mt }}" {% if mt == entry.location.media_type %}selected{% endif %}>{{ mt }}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td>
+          <input type="text" name="path" form="edit-loc-{{ entry.location.id }}" value="{{ entry.location.path }}" required style="width: 100%;">
+          {% if not entry.exists %}<span class="warn">not found</span>{% endif %}
+        </td>
+        <td>
+          <textarea name="exclude_globs" form="edit-loc-{{ entry.location.id }}" rows="2" placeholder="**/.cache/**">{{ entry.location.exclude_globs or "" }}</textarea>
+        </td>
+        <td><button type="submit" form="edit-loc-{{ entry.location.id }}">Save</button></td>
+        <td>
+          <form method="post" action="/settings/storage-locations/{{ entry.location.id }}/delete"
+                onsubmit="return confirm('Remove &quot;{{ entry.location.name }}&quot; and its cataloged files?');">
+            <button type="submit" class="danger-btn">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7">No storage locations configured yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% for entry in storage_locations %}
+    <form id="edit-loc-{{ entry.location.id }}" method="post" action="/settings/storage-locations/{{ entry.location.id }}/update" hidden></form>
+  {% endfor %}
+
+  <h3>Add a storage location</h3>
+  <p class="meta">
+    Media type decides which file extensions get cataloged from this location - "files" catalogs anything, tagging
+    known extensions with their real type and using "files" itself as the misc catch-all for everything else. See
+    extensions per type in the Catalog section below.
+  </p>
+  <form class="toolbar" method="post" action="/settings/storage-locations">
+    <input type="text" name="name" placeholder="Name (e.g. Movies)" required>
+    <input type="text" id="add-storage-path" name="path" placeholder="Path (e.g. {{ media_root }}/Movies)" required style="min-width: 22rem;">
+    <button type="button" class="mini-btn" onclick="mbOpenBrowseDialog()">Browse…</button>
+    <select name="media_type">
+      {% for mt in media_types %}
+        <option value="{{ mt }}">{{ mt }}</option>
+      {% endfor %}
+    </select>
+    <select disabled title="Remote storage is not supported yet">
+      <option>Local</option>
+      <option disabled>Remote (coming soon)</option>
+    </select>
+    <button type="submit">Add</button>
+  </form>
+
+  <dialog id="browse-folders-dialog" class="browse-dialog">
+    <div class="browse-dialog-header">
+      <strong>Select a folder</strong>
+      <nav id="browse-breadcrumb" aria-label="Path"></nav>
+    </div>
+    <div class="browse-dialog-body">
+      <ul id="browse-folder-list"></ul>
+    </div>
+    <form method="dialog" class="browse-dialog-footer">
+      <button type="submit" class="mini-btn">Cancel</button>
+      <button type="button" class="mini-btn" onclick="mbSelectCurrentFolder()">Select this folder</button>
+    </form>
+  </dialog>
+  <script>
+    const MB_MEDIA_ROOT = {{ media_root|tojson }};
+    let mbBrowseCurrentPath = MB_MEDIA_ROOT;
+
+    function mbOpenBrowseDialog() {
+      const startPath = document.getElementById("add-storage-path").value.trim() || MB_MEDIA_ROOT;
+      mbLoadBrowseFolders(startPath);
+      document.getElementById("browse-folders-dialog").showModal();
+    }
+
+    async function mbLoadBrowseFolders(path) {
+      const url = "/settings/browse-folders?path=" + encodeURIComponent(path);
+      const response = await fetch(url);
+      if (!response.ok) {
+        // Typed/remembered path no longer resolves under the media root - fall
+        // back to the root itself rather than leaving the dialog stuck.
+        if (path !== MB_MEDIA_ROOT) {
+          return mbLoadBrowseFolders(MB_MEDIA_ROOT);
+        }
+        return;
+      }
+      const data = await response.json();
+      mbBrowseCurrentPath = data.path;
+      mbRenderBreadcrumb(data.path);
+      mbRenderFolderList(data.folders);
+    }
+
+    function mbRenderBreadcrumb(path) {
+      const breadcrumb = document.getElementById("browse-breadcrumb");
+      breadcrumb.replaceChildren();
+      if (!path.startsWith(MB_MEDIA_ROOT)) {
+        return;
+      }
+      const relative = path.slice(MB_MEDIA_ROOT.length).split("/").filter(Boolean);
+      const rootLabel = MB_MEDIA_ROOT.split("/").filter(Boolean).pop() || MB_MEDIA_ROOT;
+      let runningPath = MB_MEDIA_ROOT;
+
+      const addSegment = (label, segmentPath) => {
+        if (breadcrumb.childElementCount > 0) {
+          breadcrumb.appendChild(document.createTextNode(" / "));
+        }
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "mini-btn";
+        button.textContent = label;
+        button.addEventListener("click", () => mbLoadBrowseFolders(segmentPath));
+        breadcrumb.appendChild(button);
+      };
+
+      addSegment(rootLabel, MB_MEDIA_ROOT);
+      for (const part of relative) {
+        runningPath += "/" + part;
+        addSegment(part, runningPath);
+      }
+    }
+
+    function mbRenderFolderList(folders) {
+      const list = document.getElementById("browse-folder-list");
+      list.replaceChildren();
+      if (folders.length === 0) {
+        const empty = document.createElement("li");
+        empty.className = "meta";
+        empty.textContent = "No subfolders here.";
+        list.appendChild(empty);
+        return;
+      }
+      for (const folder of folders) {
+        const item = document.createElement("li");
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "mini-btn";
+        button.textContent = folder.name;
+        button.addEventListener("click", () => mbLoadBrowseFolders(folder.path));
+        item.appendChild(button);
+        list.appendChild(item);
+      }
+    }
+
+    function mbSelectCurrentFolder() {
+      document.getElementById("add-storage-path").value = mbBrowseCurrentPath;
+      document.getElementById("browse-folders-dialog").close();
+    }
+  </script>
+
+  <h3>Folders found under {{ media_root }}</h3>
+  {% if discovered_folders %}
+  <p class="meta">Subfolders of the media mount not tied to a Jellyfin library. Add one as a storage location to catalog it too - useful for a manually-created test/source folder.</p>
+  <table>
+    <thead><tr><th>Folder</th><th>Path</th><th></th></tr></thead>
+    <tbody>
+      {% for folder in discovered_folders %}
+      <tr>
+        <td>{{ folder.name }}</td>
+        <td><code>{{ folder.path }}</code></td>
+        <td>
+          {% if folder.already_added %}
+            <span class="status-pill status-done">added</span>
+          {% else %}
+            <form method="post" action="/settings/storage-locations">
+              <input type="hidden" name="name" value="{{ folder.name }}">
+              <input type="hidden" name="path" value="{{ folder.path }}">
+              <button type="submit">Add as storage location</button>
+            </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="warn">No subfolders found under <code>{{ media_root }}</code>.</p>
+  {% endif %}
+
+  {% if jellyfin_config %}
+  <h3>Import from Jellyfin</h3>
+  {% if jellyfin_libraries %}
+  <p class="meta">Libraries configured on your Jellyfin server. Add one as a storage location to catalog it here too.</p>
+  <table>
+    <thead><tr><th>Library</th><th>Path</th><th></th></tr></thead>
+    <tbody>
+      {% for lib in jellyfin_libraries %}
+      <tr>
+        <td>{{ lib.name }}</td>
+        <td><code>{{ lib.suggested_path or "(no path reported)" }}</code></td>
+        <td>
+          {% if lib.already_added %}
+            <span class="status-pill status-done">added</span>
+          {% elif lib.suggested_path %}
+            <form method="post" action="/settings/storage-locations">
+              <input type="hidden" name="name" value="{{ lib.name }}">
+              <input type="hidden" name="path" value="{{ lib.suggested_path }}">
+              <button type="submit">Add as storage location</button>
+            </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="warn">Could not load libraries from Jellyfin - check the connection in the section below.</p>
+  {% endif %}
+  {% endif %}
+
+  </section>
+
+  <section class="card" id="jellyfin-integration">
+  <h2>Jellyfin integration</h2>
+  <p class="meta">
+    Movie details (title, plot, year, IMDb/TMDb IDs) are already picked up automatically from <code>.nfo</code> sidecar files during a scan.
+    Connect to Jellyfin below to also pull per-user watch status and import its libraries.
+  </p>
+
+  {% if jellyfin_config %}
+  <p class="meta">
+    Server: <code>{{ jellyfin_config.server_url }}</code>
+    &middot; Account:
+    {% if jellyfin_config.sync_user_name %}
+      <strong>{{ jellyfin_config.sync_user_name }}</strong>
+    {% else %}
+      <span class="warn">not selected</span>
+    {% endif %}
+    &middot; API key: <span class="status-pill status-done">set</span>
+  </p>
+  {% endif %}
+
+  <form class="toolbar" method="post" action="/settings/jellyfin">
+    <input type="text" name="server_url" placeholder="http://jellyfin:8096" required
+           value="{{ jellyfin_config.server_url if jellyfin_config else '' }}" style="min-width: 16rem;">
+    <input type="password" name="api_key" placeholder="API key" required
+           value="{{ jellyfin_config.api_key if jellyfin_config else '' }}" style="min-width: 16rem;">
+    <button type="submit">Save</button>
+  </form>
+
+  {% if jellyfin_config %}
+  <form class="toolbar" method="post" action="/settings/jellyfin/test">
+    <button type="submit">Test connection</button>
+  </form>
+  <form method="post" action="/settings/jellyfin/delete"
+        onsubmit="return confirm('Remove the saved Jellyfin connection?');">
+    <button type="submit" class="danger-btn">Remove connection</button>
+  </form>
+
+  <h3>Sync watch status</h3>
+  <p class="meta">
+    Jellyfin tracks watch status per user. Pick which Jellyfin account's watch data to pull into the catalog,
+    and confirm how each server maps a file's path (both containers mount the same folder, just at different paths).
+  </p>
+
+  {% if jellyfin_users %}
+  <form class="toolbar" method="post" action="/settings/jellyfin/sync-user">
+    <select name="sync_user_id" required onchange="this.form.sync_user_name.value = this.options[this.selectedIndex].text">
+      <option value="">Select a user...</option>
+      {% for u in jellyfin_users %}
+        <option value="{{ u.id }}" {% if jellyfin_config.sync_user_id == u.id %}selected{% endif %}>{{ u.name }}</option>
+      {% endfor %}
+    </select>
+    <input type="hidden" name="sync_user_name" value="{{ jellyfin_config.sync_user_name or '' }}">
+    <input type="text" name="path_prefix_from" value="{{ jellyfin_config.path_prefix_from }}" title="Jellyfin's path prefix" style="width: 8rem;">
+    <span>&rarr;</span>
+    <input type="text" name="path_prefix_to" value="{{ jellyfin_config.path_prefix_to }}" title="MediaBridge's path prefix" style="width: 8rem;">
+    <button type="submit">Save</button>
+  </form>
+  {% elif jellyfin_config %}
+  <p class="warn">Could not load Jellyfin users - check the connection above.</p>
+  {% endif %}
+
+  {% if jellyfin_config.sync_user_id %}
+  <p class="meta">Currently syncing watch status as <strong>{{ jellyfin_config.sync_user_name }}</strong>. {{ watched_count }} movie(s) marked watched.</p>
+  <form class="toolbar" method="post" action="/settings/jellyfin/sync">
+    <button class="scan-btn" type="submit">Sync watch status now</button>
+  </form>
+  {% endif %}
+  {% endif %}
+
+  </section>
+
+  <section class="card" id="backup-encryption">
+  <h2>Backup encryption</h2>
+  <p class="meta">
+    When enabled, new backups are encrypted (AES-256-GCM) with a key derived from the passphrase below before being
+    written to the backup location - useful if the backup destination isn't fully trusted (e.g. remote/cloud storage).
+    Each file gets its own derived key; nothing but the passphrase itself needs to be kept safe.
+    <strong>If you lose the passphrase, encrypted backups cannot be recovered.</strong>
+  </p>
+  <p class="meta">
+    Encryption:
+    {% if backup_encryption_config and backup_encryption_config.enabled %}
+      <span class="status-pill status-done">enabled</span>
+    {% else %}
+      <span class="status-pill">disabled</span>
+    {% endif %}
+    {% if backup_encryption_config and backup_encryption_config.password %}
+      (passphrase set)
+      <button type="button" class="mini-btn" data-passphrase="{{ backup_encryption_config.password }}" onclick="mbCopyPassphrase(this)">Copy current passphrase</button>
+    {% else %}
+      (no passphrase set yet)
+    {% endif %}
+  </p>
+  {% if backup_encryption_config and backup_encryption_config.password %}
+  <p class="warn">
+    Setting a new passphrase below re-derives everything from scratch (it's re-salted too), so ALL existing encrypted
+    backups become permanently unrecoverable - even if you remember this old passphrase. Copy it above first if you
+    might need it again.
+  </p>
+  {% endif %}
+  <form class="toolbar" method="post" action="/settings/backup-encryption"
+        onsubmit="return !this.password.value || confirm('This replaces the passphrase used to derive backup encryption keys. ALL existing encrypted backups will become permanently unrecoverable, even if you remember the old passphrase. Continue?');">
+    <input type="password" id="bge-password" name="password" placeholder="New passphrase (leave blank to keep current)" style="min-width: 18rem;">
+    <button type="button" class="mini-btn" onclick="mbGeneratePassphrase()">Generate random</button>
+    <label class="field-check">
+      <input type="checkbox" id="bge-show" onchange="document.getElementById('bge-password').type = this.checked ? 'text' : 'password';">
+      Show
+    </label>
+    <label class="field-check">
+      <input type="checkbox" name="enabled" value="true" {% if backup_encryption_config and backup_encryption_config.enabled %}checked{% endif %}>
+      Enable encryption for new backups
+    </label>
+    <button type="submit">Save</button>
+  </form>
+  <script>
+    function mbGeneratePassphrase() {
+      const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+      const values = new Uint32Array(24);
+      window.crypto.getRandomValues(values);
+      let passphrase = "";
+      for (let i = 0; i < values.length; i++) {
+        passphrase += charset[values[i] % charset.length];
+      }
+      const field = document.getElementById("bge-password");
+      field.value = passphrase;
+      field.type = "text";
+      document.getElementById("bge-show").checked = true;
+    }
+
+    function mbCopyPassphrase(button) {
+      const text = button.dataset.passphrase;
+      const onCopied = () => {
+        const original = button.textContent;
+        button.textContent = "Copied!";
+        setTimeout(() => { button.textContent = original; }, 1500);
+      };
+      if (window.isSecureContext && navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(onCopied).catch(() => mbFallbackCopy(text, onCopied));
+      } else {
+        mbFallbackCopy(text, onCopied);
+      }
+    }
+
+    function mbFallbackCopy(text, onCopied) {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        document.execCommand("copy");
+        onCopied();
+      } catch (e) {
+        alert("Could not copy automatically. Passphrase: " + text);
+      }
+      document.body.removeChild(textarea);
+    }
+  </script>
+
+  </section>
+
+  <section class="card" id="transfer-settings">
+  <h2>Transfer &amp; Backup settings</h2>
+  <p class="meta">
+    Control how files are packed into backup archives and the speed of transfers:
+  </p>
+
+  {% set tc = transfer_config %}
+  <div style="background: #f5f5f5; border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem; font-size: 0.9rem;">
+    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+      <div>
+        <strong style="color: #666;">Small files</strong><br>
+        &lt; {{ "%.0f"|format((tc.min_size_bytes / 1048576) if tc else 10) }} MiB<br>
+        <span style="color: #999; font-size: 0.85rem;">Grouped into shared archives</span>
+      </div>
+      <div>
+        <strong style="color: #666;">Medium files</strong><br>
+        {{ "%.0f"|format((tc.min_size_bytes / 1048576) if tc else 10) }} – {{ "%.0f"|format((tc.max_size_bytes / 1048576) if tc else 1000) }} MiB<br>
+        <span style="color: #999; font-size: 0.85rem;">Backed up individually</span>
+      </div>
+      <div>
+        <strong style="color: #666;">Large files</strong><br>
+        &gt; {{ "%.0f"|format((tc.max_size_bytes / 1048576) if tc else 1000) }} MiB<br>
+        <span style="color: #999; font-size: 0.85rem;">Split into parts</span>
+      </div>
+    </div>
+  </div>
+
+  <form class="toolbar" method="post" action="/settings/backup-archiving">
+    <label class="field">
+      Min size (MiB)
+      <input type="number" name="min_size_mib" min="0.1" step="1" value="{{ (tc.min_size_bytes / 1048576) if tc else 10 }}" style="width: 9rem;">
+      <span style="font-size: 0.8rem; color: #666; display: block; margin-top: 0.25rem;">Files below this threshold are clumped together (default: 10)</span>
+    </label>
+    <label class="field">
+      Max size (MiB)
+      <input type="number" name="max_size_mib" min="1" step="1" value="{{ (tc.max_size_bytes / 1048576) if tc else 1000 }}" style="width: 9rem;">
+      <span style="font-size: 0.8rem; color: #666; display: block; margin-top: 0.25rem;">Files above this threshold are split into parts (default: 1000)</span>
+    </label>
+    <label class="field">
+      GCS bucket prefix
+      <input type="text" name="prefix" value="{{ cloud_storage_config.prefix if cloud_storage_config else '' }}" placeholder="e.g. server01/" style="width: 12rem;">
+      <span style="font-size: 0.8rem; color: #666; display: block; margin-top: 0.25rem;">Optional path prefix in your backup bucket</span>
+    </label>
+    <button type="submit">Save</button>
+  </form>
+
+  <h3>Error handling &amp; Network performance</h3>
+  <p class="meta">
+    If a backup or restore transfer fails, it's retried immediately with a short delay between attempts, up to
+    <strong>Retry attempts</strong> times. If it continues to fail, the job is parked with a failed status and will be picked back up
+    automatically after <strong>Retry interval</strong> — and again after that, until it succeeds or you manually intervene.
+    Optionally limit the transfer speed to avoid saturating your network.
+  </p>
+  <form class="toolbar" method="post" action="/settings/transfer-retry">
+    <label class="field">
+      Max transfer speed (Mbps)
+      <input type="number" name="max_speed_mbps" min="1" step="1" value="{{ tc.max_speed_mbps if tc else '' }}" placeholder="unlimited" style="width: 9rem;">
+      <span style="font-size: 0.8rem; color: #666; display: block; margin-top: 0.25rem;">Leave empty for unlimited (optional)</span>
+    </label>
+    <label class="field">
+      Retry attempts
+      <input type="number" name="retry_count" min="0" step="1" value="{{ tc.retry_count if tc else 1 }}" style="width: 9rem;">
+    </label>
+    <label class="field">
+      Retry interval (minutes)
+      <input type="number" name="retry_interval_minutes" min="1" step="1" value="{{ tc.retry_interval_minutes if tc else 60 }}" style="width: 9rem;">
+    </label>
+    <button type="submit">Save</button>
+  </form>
+
+  </section>
+
+  <section class="card" id="cloud-storage">
+  <h2>Cloud storage (Google Cloud)</h2>
+  {% set cs = cloud_storage_config %}
+  <p class="meta">
+    Connect a Google Cloud Storage bucket to use as a second, off-site backup destination alongside (or instead of)
+    a local one.
+  </p>
+
+  <h3>1. Configure a service account</h3>
+  <p class="meta">
+    In Google Cloud Console, create a dedicated service account for MediaBridge (IAM &amp; Admin &rarr; Service
+    Accounts &rarr; Create), then grant it one of:
+  </p>
+  <ul class="meta" style="margin: 0 0 0.5rem 1.2rem; padding: 0;">
+    <li><strong>Storage Admin</strong> (<code>roles/storage.admin</code>) at the project level &mdash; lets
+      MediaBridge list your buckets so you can pick one below. Simplest to set up.</li>
+    <li><strong>Storage Object Admin</strong> (<code>roles/storage.objectAdmin</code>) scoped to a single bucket
+      only &mdash; tighter, but MediaBridge can't list buckets with this role, so you'll type the bucket name in
+      manually instead of picking from a list.</li>
+  </ul>
+
+  <h3>2. Get service account credentials</h3>
+  <p class="meta">
+    On that service account, create a JSON key (Keys &rarr; Add key &rarr; Create new key &rarr; JSON) and upload
+    the downloaded file here.
+  </p>
+  {% if cs and cs.service_account_email %}
+    <p class="meta">
+      Key loaded for <code>{{ cs.service_account_email }}</code> &middot; project <code>{{ cs.project_id }}</code>
+    </p>
+  {% endif %}
+  <form class="toolbar" method="post" action="/settings/cloud-storage/credentials" enctype="multipart/form-data">
+    <input type="file" name="key_file" accept="application/json,.json" required>
+    <button type="submit">Upload key</button>
+  </form>
+
+  <h3>3. Connect to project &amp; select bucket</h3>
+  {% if not cs or not cs.service_account_json %}
+    <p class="meta">Upload a service account key above first.</p>
+  {% else %}
+    <form class="toolbar" method="post" action="/settings/cloud-storage/list-buckets">
+      <button type="submit">List buckets</button>
+    </form>
+    {% if cloud_storage_buckets %}
+      <form class="toolbar" method="post" action="/settings/cloud-storage/bucket" style="margin-top: 0.5rem;">
+        <select name="bucket_name">
+          {% for b in cloud_storage_buckets %}
+            <option value="{{ b }}" {% if b == cs.bucket_name %}selected{% endif %}>{{ b }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit">Connect</button>
+      </form>
+    {% endif %}
+    <form class="toolbar" method="post" action="/settings/cloud-storage/bucket" style="margin-top: 0.5rem;">
+      <input type="text" name="bucket_name" placeholder="or type a bucket name manually" style="width: 16rem;">
+      <button type="submit">Connect</button>
+    </form>
+
+    {% if cs.connected %}
+      <p class="meta" style="margin-top: 0.5rem;">
+        Connected to bucket <strong>{{ cs.bucket_name }}</strong>
+        <span class="status-pill status-done">connected</span>
+      </p>
+    {% elif cs.last_error %}
+      <p class="warn">{{ cs.last_error }}</p>
+    {% endif %}
+
+    {% if cs.connected %}
+      <h3>Test connectivity &amp; speed</h3>
+      <p class="meta">
+        Uploads then downloads a throwaway 5&nbsp;MB test file to measure real throughput to this bucket, then
+        deletes it - use this to estimate how long a full backup would take.
+      </p>
+      <form method="post" action="/settings/cloud-storage/test-speed">
+        <button type="submit">Test connectivity &amp; speed</button>
+      </form>
+      {% if cs.last_speed_test_at %}
+        <p class="meta" style="margin-top: 0.5rem;">
+          Last tested {{ cs.last_speed_test_at }}: <strong>{{ "%.1f"|format(cs.upload_mbps) }} Mbps</strong> up,
+          <strong>{{ "%.1f"|format(cs.download_mbps) }} Mbps</strong> down.
+        </p>
+        <p class="meta">
+          Real uploads are capped to <strong>{{ "%.0f"|format(100 * (cloud_effective_upload_mbps / cs.upload_mbps if cs.upload_mbps else 0)) }}%</strong>
+          of measured capacity (&asymp; <strong>{{ "%.1f"|format(cloud_effective_upload_mbps) }} Mbps</strong>) so a backup
+          doesn't saturate the connection.
+          {% if cloud_backup_eta %}
+            Estimated time to back up your full library ({{ cloud_library_total_bytes | filesizeformat }}) at that
+            rate: <strong>{{ cloud_backup_eta }}</strong>.
+          {% endif %}
+        </p>
+      {% endif %}
+    {% endif %}
+
+    {% if cs.connected %}
+      <h3>4. Use as cloud archive</h3>
+      {% if cs.is_backup_target %}
+        <p class="meta">
+          <span class="status-pill status-done">cloud archive active</span>
+          This bucket is the current cloud archive. Encryption and clumping/splitting are on by default for it.
+        </p>
+      {% else %}
+        <p class="meta">Not currently the cloud archive.</p>
+      {% endif %}
+      <p class="meta">Activate or deactivate this bucket as the cloud archive, and trigger backups, from the <a href="/libraries">Libraries</a> page.</p>
+    {% endif %}
+
+    <form method="post" action="/settings/cloud-storage/disconnect" style="margin-top: 0.5rem;"
+          onsubmit="return confirm('This removes the stored service account key and bucket connection. Continue?');">
+      <button type="submit">Disconnect</button>
+    </form>
+  {% endif %}
+
+  </section>
+
+  <section class="card" id="catalog">
+  <h2>Catalog</h2>
+  <dl class="settings">
+    {% for mt, extensions in media_type_extensions.items() %}
+    <dt>Recognized "{{ mt }}" extensions</dt>
+    <dd>{{ extensions }}</dd>
+    {% endfor %}
+
+    <dt>Database</dt>
+    <dd><code>{{ database_host }}</code></dd>
+
+    <dt>Cataloged files</dt>
+    <dd>{{ movie_count }}</dd>
+
+    <dt>Last scan</dt>
+    <dd>{{ last_scanned_at or "never" }}</dd>
+  </dl>
+
+  <form class="toolbar" method="post" action="/scan-and-redirect">
+    <button class="scan-btn" type="submit">Rescan library</button>
+  </form>
+
+  </section>
+
+  <section class="card" id="service-control">
+  <h2>Service control</h2>
+  <p class="meta">
+    Restarts the copy-workflow worker pools via Terminator's internal API (no other service touches the Docker socket directly).
+    Broader task monitoring is available in <a href="http://localhost:5555" target="_blank" rel="noopener">Flower</a>.
+  </p>
+  <form class="toolbar" method="post" action="/settings/services/celery/restart">
+    <button type="submit">Restart general worker (celery)</button>
+  </form>
+  <form class="toolbar" method="post" action="/settings/services/worker/restart">
+    <button type="submit">Restart copy worker</button>
+  </form>
+  </section>
+{% endblock %}

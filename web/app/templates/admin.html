@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+{% block title %} - Admin{% endblock %}
+{% block content %}
+  <h1>Admin</h1>
+
+  {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+  {% if flash_status == 'ok' %}<p class="success-banner">{{ flash_message }}</p>{% endif %}
+  {% if flash_status == 'error' %}<p class="error-banner">{{ flash_message }}</p>{% endif %}
+
+  <section class="card">
+  <h2>Backup encryption</h2>
+  <p class="meta">
+    When enabled, new backups are encrypted (AES-256-GCM) with a key derived from the passphrase below before being
+    written to the backup location - useful if the backup destination isn't fully trusted (e.g. remote/cloud storage).
+    Each file gets its own derived key; nothing but the passphrase itself needs to be kept safe.
+    <strong>If you lose the passphrase, encrypted backups cannot be recovered.</strong>
+  </p>
+  <p class="meta">
+    Encryption:
+    {% if backup_encryption_config and backup_encryption_config.enabled %}
+      <span class="status-pill status-done">enabled</span>
+    {% else %}
+      <span class="status-pill">disabled</span>
+    {% endif %}
+    {% if backup_encryption_config and backup_encryption_config.password %}
+      (passphrase set)
+      <button type="button" class="mini-btn" data-passphrase="{{ backup_encryption_config.password }}" onclick="mbCopyPassphrase(this)">Copy current passphrase</button>
+    {% else %}
+      (no passphrase set yet)
+    {% endif %}
+  </p>
+  {% if backup_encryption_config and backup_encryption_config.password %}
+  <p class="warn">
+    Setting a new passphrase below re-derives everything from scratch (it's re-salted too), so ALL existing encrypted
+    backups become permanently unrecoverable - even if you remember this old passphrase. Copy it above first if you
+    might need it again.
+  </p>
+  {% endif %}
+  <form class="toolbar" method="post" action="/settings/backup-encryption"
+        onsubmit="return !this.password.value || confirm('This replaces the passphrase used to derive backup encryption keys. ALL existing encrypted backups will become permanently unrecoverable, even if you remember the old passphrase. Continue?');">
+    <input type="password" id="bge-password" name="password" placeholder="New passphrase (leave blank to keep current)" style="min-width: 18rem;">
+    <button type="button" class="mini-btn" onclick="mbGeneratePassphrase()">Generate random</button>
+    <label class="field-check">
+      <input type="checkbox" id="bge-show" onchange="document.getElementById('bge-password').type = this.checked ? 'text' : 'password';">
+      Show
+    </label>
+    <label class="field-check">
+      <input type="checkbox" name="enabled" value="true" {% if backup_encryption_config and backup_encryption_config.enabled %}checked{% endif %}>
+      Enable encryption for new backups
+    </label>
+    <button type="submit">Save</button>
+  </form>
+  <script>
+    function mbGeneratePassphrase() {
+      const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+      const values = new Uint32Array(24);
+      window.crypto.getRandomValues(values);
+      let passphrase = "";
+      for (let i = 0; i < values.length; i++) {
+        passphrase += charset[values[i] % charset.length];
+      }
+      const field = document.getElementById("bge-password");
+      field.value = passphrase;
+      field.type = "text";
+      document.getElementById("bge-show").checked = true;
+    }
+
+    function mbCopyPassphrase(button) {
+      const text = button.dataset.passphrase;
+      const onCopied = () => {
+        const original = button.textContent;
+        button.textContent = "Copied!";
+        setTimeout(() => { button.textContent = original; }, 1500);
+      };
+      if (window.isSecureContext && navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(onCopied).catch(() => mbFallbackCopy(text, onCopied));
+      } else {
+        mbFallbackCopy(text, onCopied);
+      }
+    }
+
+    function mbFallbackCopy(text, onCopied) {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        document.execCommand("copy");
+        onCopied();
+      } catch (e) {
+        alert("Could not copy automatically. Passphrase: " + text);
+      }
+      document.body.removeChild(textarea);
+    }
+  </script>
+
+  </section>
+
+  <section class="card">
+  <h2>Cloud storage (Google Cloud)</h2>
+  {% set cs = cloud_storage_config %}
+  <p class="meta">
+    Connect a Google Cloud Storage bucket to use as a second, off-site backup destination alongside (or instead of)
+    a local one.
+  </p>
+
+  <h3>1. Configure a service account</h3>
+  <p class="meta">
+    In Google Cloud Console, create a dedicated service account for MediaBridge (IAM &amp; Admin &rarr; Service
+    Accounts &rarr; Create), then grant it one of:
+  </p>
+  <ul class="meta" style="margin: 0 0 0.5rem 1.2rem; padding: 0;">
+    <li><strong>Storage Admin</strong> (<code>roles/storage.admin</code>) at the project level &mdash; lets
+      MediaBridge list your buckets so you can pick one below. Simplest to set up.</li>
+    <li><strong>Storage Object Admin</strong> (<code>roles/storage.objectAdmin</code>) scoped to a single bucket
+      only &mdash; tighter, but MediaBridge can't list buckets with this role, so you'll type the bucket name in
+      manually instead of picking from a list.</li>
+  </ul>
+
+  <h3>2. Get service account credentials</h3>
+  <p class="meta">
+    On that service account, create a JSON key (Keys &rarr; Add key &rarr; Create new key &rarr; JSON) and upload
+    the downloaded file here.
+  </p>
+  {% if cs and cs.service_account_email %}
+    <p class="meta">
+      Key loaded for <code>{{ cs.service_account_email }}</code> &middot; project <code>{{ cs.project_id }}</code>
+    </p>
+  {% endif %}
+  <form class="toolbar" method="post" action="/settings/cloud-storage/credentials" enctype="multipart/form-data">
+    <input type="file" name="key_file" accept="application/json,.json" required>
+    <button type="submit">Upload key</button>
+  </form>
+
+  <h3>3. Connect to project &amp; select bucket</h3>
+  {% if not cs or not cs.service_account_json %}
+    <p class="meta">Upload a service account key above first.</p>
+  {% else %}
+    <form class="toolbar" method="post" action="/settings/cloud-storage/list-buckets">
+      <button type="submit">List buckets</button>
+    </form>
+    {% if cloud_storage_buckets %}
+      <form class="toolbar" method="post" action="/settings/cloud-storage/bucket" style="margin-top: 0.5rem;">
+        <select name="bucket_name">
+          {% for b in cloud_storage_buckets %}
+            <option value="{{ b }}" {% if b == cs.bucket_name %}selected{% endif %}>{{ b }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit">Connect</button>
+      </form>
+    {% endif %}
+    <form class="toolbar" method="post" action="/settings/cloud-storage/bucket" style="margin-top: 0.5rem;">
+      <input type="text" name="bucket_name" placeholder="or type a bucket name manually" style="width: 16rem;">
+      <button type="submit">Connect</button>
+    </form>
+
+    {% if cs.connected %}
+      <p class="meta" style="margin-top: 0.5rem;">
+        Connected to bucket <strong>{{ cs.bucket_name }}</strong>
+        <span class="status-pill status-done">connected</span>
+      </p>
+    {% elif cs.last_error %}
+      <p class="warn">{{ cs.last_error }}</p>
+    {% endif %}
+
+    {% if cs.connected %}
+      <h3>Test connectivity &amp; speed</h3>
+      <p class="meta">
+        Uploads then downloads a throwaway 5&nbsp;MB test file to measure real throughput to this bucket, then
+        deletes it - use this to estimate how long a full backup would take.
+      </p>
+      <form method="post" action="/settings/cloud-storage/test-speed">
+        <button type="submit">Test connectivity &amp; speed</button>
+      </form>
+      {% if cs.last_speed_test_at %}
+        <p class="meta" style="margin-top: 0.5rem;">
+          Last tested {{ cs.last_speed_test_at }}: <strong>{{ "%.1f"|format(cs.upload_mbps) }} Mbps</strong> up,
+          <strong>{{ "%.1f"|format(cs.download_mbps) }} Mbps</strong> down.
+        </p>
+        <p class="meta">
+          Real uploads are capped to <strong>{{ "%.0f"|format(100 * (cloud_effective_upload_mbps / cs.upload_mbps if cs.upload_mbps else 0)) }}%</strong>
+          of measured capacity (&asymp; <strong>{{ "%.1f"|format(cloud_effective_upload_mbps) }} Mbps</strong>) so a backup
+          doesn't saturate the connection.
+          {% if cloud_backup_eta %}
+            Estimated time to back up your full library ({{ cloud_library_total_bytes | filesizeformat }}) at that
+            rate: <strong>{{ cloud_backup_eta }}</strong>.
+          {% endif %}
+        </p>
+      {% endif %}
+    {% endif %}
+
+    {% if cs.connected %}
+      <h3>4. Use as cloud archive</h3>
+      {% if cs.is_backup_target %}
+        <p class="meta">
+          <span class="status-pill status-done">cloud archive active</span>
+          This bucket is the current cloud archive. Encryption and clumping/splitting are on by default for it.
+        </p>
+      {% else %}
+        <p class="meta">Not currently the cloud archive.</p>
+      {% endif %}
+      <p class="meta">Activate or deactivate this bucket as the cloud archive, and trigger backups, from the <a href="/libraries">Libraries</a> page.</p>
+    {% endif %}
+
+    <form method="post" action="/settings/cloud-storage/disconnect" style="margin-top: 0.5rem;"
+          onsubmit="return confirm('This removes the stored service account key and bucket connection. Continue?');">
+      <button type="submit">Disconnect</button>
+    </form>
+  {% endif %}
+
+  </section>
+
+  <section class="card">
+  <h2>Service control</h2>
+  <p class="meta">
+    Restarts the copy-workflow worker pools via Terminator's internal API (no other service touches the Docker socket directly).
+    Broader task monitoring is available in <a href="http://localhost:5555" target="_blank" rel="noopener">Flower</a>.
+  </p>
+  <form class="toolbar" method="post" action="/admin/services/celery/restart">
+    <button type="submit">Restart general worker (celery)</button>
+  </form>
+  <form class="toolbar" method="post" action="/admin/services/worker/restart">
+    <button type="submit">Restart copy worker</button>
+  </form>
+  </section>
+{% endblock %}

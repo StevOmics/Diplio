@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %} - Scheduled Backups{% endblock %}
+{% block content %}
+  <h1>Scheduled Backups</h1>
+  {% if message %}<p class="success-banner">{{ message }}</p>{% endif %}
+  {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+  <p class="meta">
+    Run a library's backup automatically on a recurring schedule, instead of clicking Backup on
+    <a href="/libraries">Libraries</a> each time. Fired runs show up on <a href="/copy-jobs">Jobs</a> like any other.
+  </p>
+
+  {% if not rows %}
+    <p class="meta">No libraries yet - add one on <a href="/libraries">Libraries</a> first.</p>
+  {% endif %}
+
+  {% for row in rows %}
+  {% set lib = row.library %}
+  {% set schedule = row.schedule %}
+  <section class="card" id="schedule-{{ lib.id }}" style="margin-bottom: 1.5rem;">
+    <h2>{{ lib.name }}</h2>
+    {% if not row.archive %}
+      <p class="meta">No archive assigned - <a href="/libraries">set one on Libraries</a> before scheduling backups.</p>
+    {% else %}
+      <p class="meta">Backs up to {{ row.archive.name }}.
+        {% if schedule and schedule.enabled %}
+          <span class="status-pill status-done">Scheduled</span>
+          {% if schedule.next_run_at %}Next run: {{ schedule.next_run_at.strftime('%Y-%m-%d %H:%M UTC') }}.{% endif %}
+        {% else %}
+          <span class="status-pill status-pending">Not scheduled</span>
+        {% endif %}
+        {% if schedule and schedule.last_run_at %}Last run: {{ schedule.last_run_at.strftime('%Y-%m-%d %H:%M UTC') }}.{% endif %}
+      </p>
+
+      <form class="form-section" method="post" action="/scheduled-backups/{{ lib.id }}">
+        <label class="field-check">
+          <input type="checkbox" name="enabled" value="true" {% if schedule and schedule.enabled %}checked{% endif %}>
+          Enabled
+        </label>
+
+        <div class="field">
+          <label>Frequency</label>
+          <select name="frequency" id="freq-{{ lib.id }}" onchange="mbToggleWeekdays({{ lib.id }})">
+            <option value="daily" {% if not schedule or schedule.frequency == 'daily' %}selected{% endif %}>Daily</option>
+            <option value="weekly" {% if schedule and schedule.frequency == 'weekly' %}selected{% endif %}>Weekly (choose days)</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Time of day</label>
+          <input type="time" name="time_of_day" value="{{ schedule.time_of_day.strftime('%H:%M') if schedule else '02:00' }}">
+        </div>
+
+        {% set selected_days = schedule.days_of_week.split(',') if schedule and schedule.days_of_week else [] %}
+        <div class="field" id="weekdays-{{ lib.id }}" style="display: {{ 'block' if schedule and schedule.frequency == 'weekly' else 'none' }};">
+          <label>Days</label>
+          <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+            {% for value, label in [('0','Mon'), ('1','Tue'), ('2','Wed'), ('3','Thu'), ('4','Fri'), ('5','Sat'), ('6','Sun')] %}
+            <label class="field-check">
+              <input type="checkbox" name="days_of_week" value="{{ value }}" {% if value in selected_days %}checked{% endif %}>
+              {{ label }}
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="flex-baseline" style="gap: 0.5rem;">
+          <button type="submit" class="btn scan-btn">Save Schedule</button>
+        </div>
+      </form>
+
+      {% if schedule %}
+      <form method="post" action="/scheduled-backups/{{ lib.id }}/delete" style="margin-top: 0.5rem;" onsubmit="return confirm('Remove the schedule for {{ lib.name }}?');">
+        <button type="submit" class="mini-btn">Remove Schedule</button>
+      </form>
+      {% endif %}
+    {% endif %}
+  </section>
+  {% endfor %}
+
+  <script>
+    function mbToggleWeekdays(libId) {
+      const freq = document.getElementById("freq-" + libId).value;
+      document.getElementById("weekdays-" + libId).style.display = freq === "weekly" ? "block" : "none";
+    }
+  </script>
+{% endblock %}

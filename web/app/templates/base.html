@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Diplio{% block title %}{% endblock %}</title>
+  <style>
+    :root {
+      /* Apple-tier minimalist palette */
+      --text-primary: #1d1d1f;
+      --text-secondary: #86868b;
+      --text-tertiary: #9ca3af;
+
+      --bg-body: #ffffff;
+      --bg-sidebar: #f5f5f7;
+      --bg-surface: #f5f5f7;
+      --bg-surface-hover: #e8e8ed;
+
+      --accent: #0071e3;
+      --accent-hover: #0077ed;
+      --danger: #ff3b30;
+      --success: #34c759;
+      --warning: #ff9500;
+
+      --border: #e5e5ea;
+
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: var(--text-primary);
+      background: var(--bg-body);
+      display: flex;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      line-height: 1.5;
+    }
+
+    /* Typography */
+    h1 { font-size: 1.75rem; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 0.5rem; }
+    h2 { font-size: 1.25rem; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 1rem; }
+    h3 { font-size: 1rem; font-weight: 600; margin: 1.5rem 0 0.5rem; }
+    p, .meta { color: var(--text-secondary); font-size: 0.95rem; margin-bottom: 1.5rem; }
+
+    /* Sidebar Structure */
+    nav.sidebar {
+      width: 260px;
+      flex-shrink: 0;
+      background: var(--bg-sidebar);
+      border-right: 1px solid var(--border);
+      padding: 2rem 1rem 1.5rem;
+      display: flex;
+      flex-direction: column;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+    }
+    nav.sidebar h2 {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-secondary);
+      margin: 0 0 1rem 0.75rem;
+    }
+    nav.sidebar h2 a {
+      color: inherit;
+      text-decoration: none;
+      transition: color 0.15s ease;
+    }
+    nav.sidebar h2 a:hover {
+      color: var(--accent);
+    }
+
+    /* Nav Links */
+    nav.sidebar a {
+      display: block;
+      padding: 0.4rem 0.75rem;
+      margin-bottom: 0.2rem;
+      color: var(--text-primary);
+      text-decoration: none;
+      font-size: 0.95rem;
+      font-weight: 500;
+      border-radius: var(--radius-sm);
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+    nav.sidebar a:hover { background: var(--bg-surface-hover); }
+    nav.sidebar a.active {
+      background: var(--bg-surface-hover);
+      color: var(--accent);
+    }
+
+    /* Subnav Treatment */
+    nav.sidebar a.subnav-link {
+      padding: 0.3rem 0.75rem 0.3rem 2rem;
+      font-size: 0.85rem;
+      font-weight: 400;
+      color: var(--text-secondary);
+      margin-bottom: 0.1rem;
+    }
+    nav.sidebar a.subnav-link:hover { color: var(--text-primary); }
+
+    /* User Block */
+    .user-box {
+      margin-top: auto;
+      padding-top: 1.5rem;
+    }
+    .user-box .username {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin-bottom: 0.5rem;
+      padding: 0 0.75rem;
+    }
+    .user-box button {
+      width: 100%;
+      background: transparent;
+      border: none;
+      text-align: left;
+      padding: 0.4rem 0.75rem;
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: var(--danger);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+    }
+    .user-box button:hover { background: rgba(255, 59, 48, 0.1); }
+
+    /* Main Workspace */
+    main {
+      flex: 1;
+      padding: 3rem 4rem;
+      min-width: 0;
+      max-width: 1200px;
+    }
+
+    /* Core Components */
+    button, .btn {
+      font-family: inherit;
+      border-radius: var(--radius-sm);
+      padding: 0.4rem 0.8rem;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      transition: all 0.15s ease;
+    }
+    button:focus, input:focus, select:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .scan-btn { background: var(--accent); color: white; }
+    .scan-btn:hover { background: var(--accent-hover); }
+
+    .danger-btn { background: var(--danger); color: white; }
+    .danger-btn:hover { opacity: 0.9; }
+
+    .mini-btn {
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      padding: 0.2rem 0.6rem;
+      font-size: 0.8rem;
+    }
+    .mini-btn:hover:not(:disabled) { background: var(--bg-surface-hover); }
+    .mini-btn:disabled { color: var(--text-tertiary); cursor: not-allowed; }
+
+    /* Inputs */
+    form.toolbar { display: flex; gap: 0.75rem; margin-bottom: 2rem; flex-wrap: wrap; }
+    input, select {
+      font-family: inherit;
+      padding: 0.4rem 0.75rem;
+      font-size: 0.95rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      transition: background 0.15s, border-color 0.15s;
+    }
+    input:focus, select:focus { background: white; border-color: var(--accent); }
+
+    /* Tables */
+    table { width: 100%; border-collapse: collapse; margin-bottom: 2rem; }
+    th, td { text-align: left; padding: 0.75rem 0; vertical-align: top; border-bottom: 1px solid var(--border); }
+    th {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-secondary);
+      font-weight: 500;
+      padding-bottom: 0.5rem;
+    }
+    tbody tr:hover { background: rgba(0,0,0,0.01); }
+    code { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.85rem; color: var(--text-secondary); }
+
+    /* Layout Cards for Settings */
+    section.card {
+      margin-bottom: 3rem;
+    }
+
+    /* Form Fields */
+    .field { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 1.25rem; max-width: 400px; }
+    .field label { font-size: 0.85rem; font-weight: 500; color: var(--text-primary); }
+    .field-check { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; }
+    .field-check input[type="checkbox"] { width: 1rem; height: 1rem; margin: 0; }
+    .field-check label { font-size: 0.9rem; margin: 0; }
+
+    /* Alerts */
+    .error-banner, .success-banner {
+      padding: 0.75rem 1rem;
+      border-radius: var(--radius-md);
+      margin-bottom: 1.5rem;
+      font-size: 0.9rem;
+      font-weight: 500;
+    }
+    .error-banner { background: #fff0f0; color: var(--danger); }
+    .success-banner { background: #f0fdf4; color: var(--success); }
+
+    /* Status Pills */
+    .status-pill {
+      display: inline-block; padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.75rem; font-weight: 500; letter-spacing: 0.02em;
+    }
+    .status-pending { background: var(--bg-surface); color: var(--text-secondary); }
+    .status-running { background: #e0f2fe; color: var(--accent); }
+    .status-done { background: #dcfce7; color: var(--success); }
+    .status-failed { background: #fee2e2; color: var(--danger); }
+
+    /* Progress */
+    progress { width: 100%; height: 4px; border-radius: 2px; overflow: hidden; -webkit-appearance: none; border: none; }
+    progress::-webkit-progress-bar { background-color: var(--bg-surface-hover); }
+    progress::-webkit-progress-value { background-color: var(--accent); }
+
+    /* Dialog */
+    dialog.browse-dialog {
+      width: 400px; max-width: 90vw; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 0; box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+    }
+    dialog.browse-dialog::backdrop { background: rgba(0, 0, 0, 0.2); backdrop-filter: blur(4px); }
+    .browse-dialog-header { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); }
+    .browse-dialog-header nav { font-size: 0.85rem; color: var(--text-secondary); font-family: ui-monospace, monospace; }
+    .browse-dialog-body { padding: 0.5rem; max-height: 300px; overflow-y: auto; }
+    .browse-dialog-body ul { list-style: none; display: flex; flex-direction: column; gap: 0.1rem; }
+    .browse-dialog-body ul li button { width: 100%; text-align: left; background: transparent; padding: 0.5rem 0.75rem; font-size: 0.9rem; border-radius: var(--radius-sm); }
+    .browse-dialog-body ul li button:hover { background: var(--bg-surface); }
+    .browse-dialog-footer { padding: 1rem 1.25rem; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 0.5rem; }
+
+    /* Catalog Grids */
+    .action-group-label { font-size: 0.65rem; text-transform: uppercase; color: var(--text-tertiary); display: block; margin-bottom: 0.2rem; }
+    .action-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.25rem; max-width: 140px; margin-bottom: 0.5rem; }
+    .action-grid .mini-btn { width: 100%; }
+
+    /* Rescan button spinner (Libraries page per-row Rescan, Catalog's Rescan files) */
+    .mb-rescan-spinner {
+      display: inline-block; width: 0.85rem; height: 0.85rem; margin-right: 0.4rem;
+      border: 2px solid rgba(255, 255, 255, 0.4); border-top-color: currentColor;
+      border-radius: 50%; vertical-align: -0.15em; animation: mb-rescan-spin 0.8s linear infinite;
+    }
+    @keyframes mb-rescan-spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <nav class="sidebar">
+    <h2><a href="/system">Diplio</a></h2>
+
+    <a href="/system" class="{% if active == 'system' %}active{% endif %}">System Status</a>
+
+    <a href="/catalog" class="{% if active == 'catalog' %}active{% endif %}">Catalog</a>
+
+    <a href="/libraries" class="{% if active == 'libraries' %}active{% endif %}">Libraries</a>
+    {% if active == 'libraries' %}
+    <a href="/libraries#libraries-list" class="subnav-link">Libraries</a>
+    <a href="/libraries#manage-libraries" class="subnav-link">Add a Library</a>
+    <a href="/libraries#archives" class="subnav-link">Archives</a>
+    {% endif %}
+
+    <a href="/copy-jobs" class="{% if active == 'copy_jobs' %}active{% endif %}">Jobs</a>
+
+    <a href="/scheduled-backups" class="{% if active == 'scheduled_backups' %}active{% endif %}">Scheduled Backups</a>
+
+    <a href="/settings" class="{% if active == 'settings' %}active{% endif %}">Settings</a>
+    {% if active == 'settings' %}
+    <a href="/settings#backup-encryption" class="subnav-link">Backup Encryption</a>
+    <a href="/settings#transfer-settings" class="subnav-link">Transfer Settings</a>
+    <a href="/settings#cloud-storage" class="subnav-link">Cloud Storage</a>
+    <a href="/settings#archives" class="subnav-link">Archives</a>
+    <a href="/settings#catalog" class="subnav-link">Catalog</a>
+    <a href="/settings#service-control" class="subnav-link">Service Control</a>
+    {% endif %}
+
+    {% if request.session.get('is_admin') %}
+    <a href="/users" class="{% if active == 'users' %}active{% endif %}">Users</a>
+    {% endif %}
+
+    <a href="/integrations" class="{% if active == 'integrations' %}active{% endif %}">Integrations</a>
+    {% if active == 'integrations' %}
+    <a href="/integrations#jellyfin" class="subnav-link">Jellyfin</a>
+    {% endif %}
+
+    {% if username %}
+    <div class="user-box">
+      <a href="/profile" class="username">{{ username }}</a>
+      <form method="post" action="/logout">
+        <button type="submit">Log Out</button>
+      </form>
+    </div>
+    {% endif %}
+  </nav>
+
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+
+  {% if username %}
+  <script>
+  (function () {
+    // Site-wide browser notifications (Settings > Notifications) - polls
+    // regardless of which page is open, not just Jobs' own live-progress
+    // polling. No-ops server-side (empty events) if browser notifications
+    // are off, so this is cheap to always run.
+    var stored = sessionStorage.getItem('mb-notify-last-id');
+    var lastId = parseInt(stored || '0', 10);
+    // First poll of a fresh session just baselines to "now" instead of
+    // surfacing every historical event as if it just happened.
+    var baselineOnly = stored === null;
+    function poll() {
+      fetch('/notifications/poll?after_id=' + lastId)
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          lastId = data.latest_id;
+          sessionStorage.setItem('mb-notify-last-id', String(lastId));
+          if (baselineOnly) { baselineOnly = false; return; }
+          if (!data.events.length) return;
+          if (Notification.permission !== 'granted') return;
+          data.events.forEach(function (e) {
+            new Notification(e.title, { body: e.message });
+          });
+        })
+        .catch(function () {});
+    }
+    poll();
+    setInterval(poll, 10000);
+  })();
+  </script>
+  {% endif %}
+
+  <script>
+  // Rescan buttons (Libraries page per-row Rescan, Catalog's Rescan files)
+  // POST synchronously today (scanning isn't a background job), so the only
+  // way to show real progress feedback is to make the wait itself visible -
+  // intercepting the submit with fetch() lets a spinner show for the whole
+  // request instead of relying on the browser's own weak page-load affordance.
+  document.querySelectorAll('form.mb-rescan-form').forEach(function (form) {
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var btn = form.querySelector('button[type="submit"]');
+      var spinner = form.querySelector('.mb-rescan-spinner');
+      var label = form.querySelector('.mb-rescan-label');
+      if (btn) btn.disabled = true;
+      if (spinner) spinner.style.display = 'inline-block';
+      if (label && label.dataset.scanningText !== undefined) label.textContent = label.dataset.scanningText;
+      else if (label) { label.dataset.originalText = label.textContent; label.textContent = 'Scanning...'; }
+      fetch(form.action, { method: 'POST' })
+        .then(function (r) { window.location.href = r.url; })
+        .catch(function () {
+          if (btn) btn.disabled = false;
+          if (spinner) spinner.style.display = 'none';
+          if (label && label.dataset.originalText) label.textContent = label.dataset.originalText;
+        });
+    });
+  });
+  </script>
+</body>
+</html>

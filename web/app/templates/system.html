@@ -1,0 +1,282 @@
+{% extends "base.html" %}
+{% block title %} - System Status{% endblock %}
+{% block content %}
+<style>
+  .status-nav-card {
+    transition: all 0.15s ease;
+  }
+  .status-nav-card:hover {
+    background: var(--bg-surface-hover);
+    border-color: var(--accent);
+  }
+</style>
+
+<h1>System Status</h1>
+{% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+{% if message %}<p class="success-banner">{{ message }}</p>{% endif %}
+
+<!-- System Health Overview -->
+<section class="card" style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.5rem; margin-bottom: 2rem;">
+  <h2 style="margin: 0 0 1.5rem 0;">Health Overview</h2>
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem;">
+    <!-- Database Status -->
+    <div style="display: flex; align-items: center; gap: 1rem;">
+      <div style="flex-shrink: 0;">
+        {% if health.database_ok %}
+          <div style="width: 12px; height: 12px; background: var(--success); border-radius: 50%;"></div>
+        {% else %}
+          <div style="width: 12px; height: 12px; background: var(--danger); border-radius: 50%;"></div>
+        {% endif %}
+      </div>
+      <div>
+        <div style="font-size: 0.85rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Database</div>
+        <div style="font-size: 0.9rem; font-weight: 500;">{% if health.database_ok %}Connected{% else %}Error{% endif %}</div>
+        {% if not health.database_ok and health.database_error %}
+          <div style="font-size: 0.8rem; color: var(--danger);">{{ health.database_error }}</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Celery Status -->
+    <div style="display: flex; align-items: center; gap: 1rem;">
+      <div style="flex-shrink: 0;">
+        {% if health.celery_ok %}
+          <div style="width: 12px; height: 12px; background: var(--success); border-radius: 50%;"></div>
+        {% else %}
+          <div style="width: 12px; height: 12px; background: var(--warning); border-radius: 50%;"></div>
+        {% endif %}
+      </div>
+      <div>
+        <div style="font-size: 0.85rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Celery Workers</div>
+        <div style="font-size: 0.9rem; font-weight: 500;">{% if health.celery_ok %}Online ({{ health.celery_workers }}){% else %}Offline{% endif %}</div>
+        <div style="font-size: 0.8rem; color: var(--text-secondary);">{% if health.celery_tasks_active %}{{ health.celery_tasks_active }} active{% endif %}</div>
+      </div>
+    </div>
+
+    <!-- Uptime -->
+    <div style="display: flex; align-items: center; gap: 1rem;">
+      <div style="flex-shrink: 0;">
+        <div style="width: 12px; height: 12px; background: var(--success); border-radius: 50%;"></div>
+      </div>
+      <div>
+        <div style="font-size: 0.85rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Server Time</div>
+        <div style="font-size: 0.9rem; font-weight: 500;">{{ health.current_time }}</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Current Activity -->
+<section class="card" style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.5rem; margin-bottom: 2rem;">
+  <h2 style="margin: 0 0 1.5rem 0;">Current Activity</h2>
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1.5rem;">
+    <!-- Pending Jobs -->
+    <div style="text-align: center;">
+      <div style="font-size: 2.5rem; font-weight: 600; color: var(--text-primary);">{{ activity.pending_count }}</div>
+      <div style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 0.75rem;">Pending Jobs</div>
+      <a href="/copy-jobs" style="display: inline-block; padding: 0.4rem 0.8rem; background: var(--bg-surface-hover); color: var(--accent); text-decoration: none; border-radius: var(--radius-sm); font-size: 0.85rem;">View Jobs</a>
+    </div>
+
+    <!-- Running Jobs -->
+    <div style="text-align: center;">
+      <div style="font-size: 2.5rem; font-weight: 600; color: {% if activity.running_count > 0 %}#FF9500{% else %}var(--text-primary){% endif %};">{{ activity.running_count }}</div>
+      <div style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 0.75rem;">Running Jobs</div>
+      <a href="/copy-jobs" style="display: inline-block; padding: 0.4rem 0.8rem; background: var(--bg-surface-hover); color: var(--accent); text-decoration: none; border-radius: var(--radius-sm); font-size: 0.85rem;">View Jobs</a>
+    </div>
+
+    <!-- Failed Jobs -->
+    <div style="text-align: center;">
+      <div style="font-size: 2.5rem; font-weight: 600; color: {% if activity.failed_count > 0 %}var(--danger){% else %}var(--text-primary){% endif %};">{{ activity.failed_count }}</div>
+      <div style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 0.75rem;">Failed Jobs</div>
+      <a href="/copy-jobs" style="display: inline-block; padding: 0.4rem 0.8rem; background: var(--bg-surface-hover); color: var(--accent); text-decoration: none; border-radius: var(--radius-sm); font-size: 0.85rem;">View Jobs</a>
+    </div>
+  </div>
+</section>
+
+<!-- Storage Summary -->
+<section class="card" style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.5rem; margin-bottom: 2rem;">
+  <h2 style="margin: 0 0 1.5rem 0;">Storage Summary</h2>
+  <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 2rem;">
+    <!-- Catalog Stats -->
+    <div>
+      <div style="margin-bottom: 1.5rem;">
+        <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.5rem;">
+          <span style="font-size: 0.9rem; font-weight: 500;">Total Cataloged Files</span>
+          <span style="font-size: 1.25rem; font-weight: 600;">{{ storage.total_files }}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: baseline;">
+          <span style="font-size: 0.9rem; font-weight: 500;">Total Size</span>
+          <span style="font-size: 1.25rem; font-weight: 600;">{{ storage.total_size_formatted }}</span>
+        </div>
+      </div>
+
+      {% if storage.by_media_type %}
+      <div style="border-top: 1px solid var(--border); padding-top: 1rem;">
+        <div style="font-size: 0.85rem; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 0.05em; margin-bottom: 0.75rem;">By Media Type</div>
+        {% for media_type, count, size_formatted in storage.by_media_type %}
+        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; font-size: 0.9rem;">
+          <span style="text-transform: capitalize;">{{ media_type }}</span>
+          <span style="color: var(--text-secondary);">{{ count }} files ({{ size_formatted }})</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Backup Targets -->
+    <div>
+      <div style="font-size: 0.85rem; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 0.05em; margin-bottom: 0.75rem;">Backup Targets</div>
+      {% if storage.cloud_backup_target %}
+        <div style="background: rgba(0, 113, 227, 0.1); border-left: 3px solid var(--accent); padding: 0.75rem; border-radius: var(--radius-sm);">
+          <div style="font-weight: 500; font-size: 0.9rem;">{{ storage.cloud_backup_target.name }}</div>
+          <div style="font-size: 0.8rem; color: var(--text-secondary);">Google Cloud Storage</div>
+        </div>
+        <div id="cloud-inventory" style="margin-top: 0.75rem; font-size: 0.85rem;">
+          <div id="cloud-inventory-body" style="color: var(--text-secondary);">Not checked yet.</div>
+          <button id="cloud-inventory-refresh" type="button" style="margin-top: 0.5rem; padding: 0.4rem 0.8rem; background: var(--bg-surface-hover); color: var(--accent); border: none; border-radius: var(--radius-sm); font-size: 0.85rem; cursor: pointer;">Refresh</button>
+        </div>
+        <script>
+        (function () {
+          var btn = document.getElementById("cloud-inventory-refresh");
+          var body = document.getElementById("cloud-inventory-body");
+          var cached = {{ cloud_inventory_json | safe if cloud_inventory_json else "null" }};
+          function row(label, value) {
+            var d = document.createElement("div");
+            d.style.cssText = "display: flex; justify-content: space-between; gap: 0.5rem;";
+            var a = document.createElement("span"), b = document.createElement("span");
+            a.textContent = label; b.textContent = value; b.style.color = "var(--text-secondary)";
+            d.append(a, b);
+            return d;
+          }
+          function note(text, keys) {
+            var d = document.createElement("div");
+            d.style.cssText = "margin-top: 0.5rem; color: var(--warning, #b45309);";
+            d.textContent = text;
+            if (keys.length) d.title = keys.slice(0, 20).join("\n") + (keys.length > 20 ? "\n..." : "");
+            return d;
+          }
+          function renderResult(j) {
+            body.replaceChildren();
+            body.append(row("Archives in cloud", j.archive_count + " (" + j.total_size + ")"));
+            j.tiers.forEach(function (t) { body.append(row("\u00a0\u00a0" + t.tier, t.count + " (" + t.size + ")")); });
+            if (j.untracked.length) body.append(note(j.untracked.length + " in the bucket but not recorded in the database", j.untracked));
+            if (j.missing.length) body.append(note(j.missing.length + " recorded in the database but missing from the bucket", j.missing));
+            if (j.no_index.length) body.append(note(j.no_index.length + " archive(s) without an index file", j.no_index));
+            if (j.orphan_index.length) body.append(note(j.orphan_index.length + " index file(s) without an archive", j.orphan_index));
+            var t = document.createElement("div");
+            t.style.cssText = "margin-top: 0.5rem; font-size: 0.75rem; color: var(--text-tertiary);";
+            t.textContent = "Checked " + j.checked_at;
+            body.append(t);
+          }
+          btn.addEventListener("click", function () {
+            btn.disabled = true; btn.textContent = "Refreshing...";
+            fetch("/system/cloud-inventory", { method: "POST" })
+              .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+              .then(function (res) {
+                if (!res.ok) { body.replaceChildren(); body.textContent = res.j.error || "Refresh failed"; return; }
+                renderResult(res.j);
+              })
+              .catch(function () { body.replaceChildren(); body.textContent = "Refresh failed"; })
+              .finally(function () { btn.disabled = false; btn.textContent = "Refresh"; });
+          });
+          // Show the last cached refresh (persisted server-side, see
+          // CloudStorageConfig.last_inventory_json) instead of "Not checked
+          // yet." on every page load - previously this state only lived in
+          // the DOM and was lost on refresh.
+          if (cached) renderResult(cached);
+        })();
+        </script>
+      {% else %}
+        <div style="background: var(--bg-surface-hover); padding: 0.75rem; border-radius: var(--radius-sm);">
+          <div style="font-size: 0.9rem; color: var(--text-secondary);">No cloud backup target configured</div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<!-- Configuration Summary -->
+<section class="card" style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.5rem; margin-bottom: 2rem;">
+  <h2 style="margin: 0 0 1.5rem 0;">Configuration</h2>
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
+    <!-- Backup Settings -->
+    {% if config.transfer_config %}
+    <div>
+      <div style="font-size: 0.85rem; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 0.05em; margin-bottom: 0.75rem;">Backup Archiving</div>
+      <div style="font-size: 0.9rem; line-height: 1.8;">
+        <div><strong>Min Size:</strong> {{ config.transfer_config.min_size_formatted }}</div>
+        <div><strong>Clump Size:</strong> {{ config.transfer_config.clump_size_formatted }}</div>
+        <div><strong>Max Size:</strong> {{ config.transfer_config.max_size_formatted }}</div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Encryption -->
+    <div>
+      <div style="font-size: 0.85rem; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 0.05em; margin-bottom: 0.75rem;">Backup Encryption</div>
+      <div style="font-size: 0.9rem; line-height: 1.8;">
+        {% if config.encryption_config.enabled %}
+          <div><span style="display: inline-block; width: 10px; height: 10px; background: var(--success); border-radius: 50%; margin-right: 0.5rem;"></span><strong>Enabled</strong></div>
+          <div style="color: var(--text-secondary); font-size: 0.85rem;">AES-256-GCM</div>
+        {% else %}
+          <div><span style="display: inline-block; width: 10px; height: 10px; background: var(--text-tertiary); border-radius: 50%; margin-right: 0.5rem;"></span><strong>Disabled</strong></div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Jellyfin Integration -->
+    <div>
+      <div style="font-size: 0.85rem; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 0.05em; margin-bottom: 0.75rem;">Jellyfin Sync</div>
+      <div style="font-size: 0.9rem; line-height: 1.8;">
+        {% if config.jellyfin_config %}
+          <div><span style="display: inline-block; width: 10px; height: 10px; background: var(--success); border-radius: 50%; margin-right: 0.5rem;"></span><strong>Configured</strong></div>
+          <div style="color: var(--text-secondary); font-size: 0.85rem;">{{ config.jellyfin_config.server_url }}</div>
+        {% else %}
+          <div><span style="display: inline-block; width: 10px; height: 10px; background: var(--text-tertiary); border-radius: 50%; margin-right: 0.5rem;"></span><strong>Not Configured</strong></div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Cloud Storage -->
+    <div>
+      <div style="font-size: 0.85rem; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 0.05em; margin-bottom: 0.75rem;">Cloud Storage</div>
+      <div style="font-size: 0.9rem; line-height: 1.8;">
+        {% if config.cloud_storage_config %}
+          <div><span style="display: inline-block; width: 10px; height: 10px; background: var(--success); border-radius: 50%; margin-right: 0.5rem;"></span><strong>Configured</strong></div>
+          <div style="color: var(--text-secondary); font-size: 0.85rem;">{{ config.cloud_storage_config.bucket_name }}</div>
+        {% else %}
+          <div><span style="display: inline-block; width: 10px; height: 10px; background: var(--text-tertiary); border-radius: 50%; margin-right: 0.5rem;"></span><strong>Not Configured</strong></div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Quick Navigation -->
+<section class="card" style="margin-bottom: 0;">
+  <h2 style="margin: 0 0 1.5rem 0;">Quick Navigation</h2>
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+    <a href="/catalog" class="status-nav-card" style="display: flex; flex-direction: column; gap: 0.5rem; padding: 1rem; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); text-decoration: none;">
+      <span style="font-weight: 600; color: var(--text-primary);">Catalog</span>
+      <span style="font-size: 0.85rem; color: var(--text-secondary);">Browse & manage files</span>
+    </a>
+    <a href="/copy-jobs" class="status-nav-card" style="display: flex; flex-direction: column; gap: 0.5rem; padding: 1rem; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); text-decoration: none;">
+      <span style="font-weight: 600; color: var(--text-primary);">Jobs</span>
+      <span style="font-size: 0.85rem; color: var(--text-secondary);">Monitor transfers</span>
+    </a>
+    <a href="/libraries" class="status-nav-card" style="display: flex; flex-direction: column; gap: 0.5rem; padding: 1rem; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); text-decoration: none;">
+      <span style="font-weight: 600; color: var(--text-primary);">Libraries</span>
+      <span style="font-size: 0.85rem; color: var(--text-secondary);">Manage storage locations</span>
+    </a>
+    <a href="/settings" class="status-nav-card" style="display: flex; flex-direction: column; gap: 0.5rem; padding: 1rem; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); text-decoration: none;">
+      <span style="font-weight: 600; color: var(--text-primary);">Settings</span>
+      <span style="font-size: 0.85rem; color: var(--text-secondary);">Configure system</span>
+    </a>
+  </div>
+</section>
+
+<script>
+  // Auto-refresh every 10 seconds to keep status current
+  setTimeout(function() { location.reload(); }, 10000);
+</script>
+{% endblock %}

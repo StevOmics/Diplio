@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %} - Profile{% endblock %}
+{% block content %}
+  <h1>Profile</h1>
+
+  {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+  {% if flash_status == 'ok' %}<p class="success-banner">{{ flash_message }}</p>{% endif %}
+
+  <section class="card">
+  <h2>Account</h2>
+  <p class="meta">
+    Role:
+    <span class="status-pill {% if user.is_admin %}status-done{% else %}status-pending{% endif %}">{{ 'Admin' if user.is_admin else 'User' }}</span>
+    {% if not user.is_admin %}<span class="meta">- ask an admin to change this on the <a href="/users">Users</a> page.</span>{% endif %}
+  </p>
+  <form class="toolbar" method="post" action="/profile">
+    <label class="field">
+      Username
+      <input type="text" name="new_username" value="{{ user.username }}" required>
+    </label>
+    <label class="field">
+      New password
+      <input type="password" name="password" placeholder="Leave blank to keep current">
+    </label>
+    <button type="submit">Save</button>
+  </form>
+  </section>
+{% endblock %}

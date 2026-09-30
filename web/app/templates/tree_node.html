@@ -1,0 +1,37 @@
+{% for sf in subfolders %}
+  <li class="tree-node" data-path="{{ sf.path }}">
+    <input type="checkbox" class="tree-select" name="folder_paths" value="{{ sf.path }}" form="bulk-actions-form">
+    <div class="tree-row">
+      <span class="tree-caret">&#9656;</span>
+      <a class="tree-label" href="{{ catalog_path }}?folder={{ sf.path | urlencode }}">{{ sf.name }}</a>
+      {% if sf.label %}<span class="tree-sync-status sync-{{ sf.state }}">({{ sf.label }})</span>{% endif %}
+    </div>
+    <ul class="tree-children" style="display: none;"></ul>
+  </li>
+  {% endfor %}
+  {% for m in media_files %}
+  {% set is_excluded = m.id in excluded_media_file_ids %}
+  {% set local_job = backup_jobs.get(m.id) %}
+  {% set local_record = backup_records.get(m.id) %}
+  {% set local_stale = local_record and local_record.local_checksum != m.fingerprint %}
+  {% set cloud_job = cloud_backup_jobs.get(m.id) %}
+  {% set cloud_record = cloud_backup_records.get(m.id) %}
+  {% set cloud_stale = cloud_record and cloud_record.local_checksum != m.fingerprint %}
+  <li class="tree-file-row">
+    <input type="checkbox" class="tree-select" name="media_file_ids" value="{{ m.id }}" form="bulk-actions-form">
+    <div class="tree-file-info">
+      <span class="tree-file-name" title="{{ m.path }}">{{ m.filename }}</span>
+      <span class="tree-file-meta">
+        {{ "%.1f"|format(m.size_bytes / 1048576) }} MB
+        {% if local_record and local_stale %}<span class="status-pill status-stale" title="backed up locally, but the file has changed since - it will be re-backed up on the next sync">local (stale){% if local_job and local_job.encrypted %} &#128274;{% endif %}</span>
+        {% elif local_record %}<span class="status-pill status-done" title="backed up locally, up to date">local{% if local_job and local_job.encrypted %} &#128274;{% endif %}</span>{% endif %}
+        {% if cloud_record and cloud_stale %}<span class="status-pill status-stale" title="backed up to cloud, but the file has changed since - it will be re-backed up on the next sync">cloud (stale){% if cloud_job and cloud_job.encrypted %} &#128274;{% endif %}</span>
+        {% elif cloud_record %}<span class="status-pill status-done" title="backed up to cloud, up to date">cloud{% if cloud_job and cloud_job.encrypted %} &#128274;{% endif %}</span>{% endif %}
+        {% if is_excluded %}<span class="status-pill status-paused">excluded</span>{% endif %}
+      </span>
+    </div>
+  </li>
+  {% endfor %}
+  {% if not subfolders and not media_files %}
+  <li class="tree-empty">(empty)</li>
+  {% endif %}

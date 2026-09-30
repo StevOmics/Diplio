@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %} - Users{% endblock %}
+{% block content %}
+  <h1>Users</h1>
+
+  {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+  {% if flash_status == 'ok' %}<p class="success-banner">{{ flash_message }}</p>{% endif %}
+  {% if flash_status == 'error' %}<p class="error-banner">{{ flash_message }}</p>{% endif %}
+
+  <section class="card">
+  <table>
+    <thead>
+      <tr><th>Username</th><th>Role</th><th>Created</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td>{{ u.username }}{% if u.username == username %} <span class="meta">(you)</span>{% endif %}</td>
+        <td>
+          {% if u.username == username %}
+            <span class="status-pill {% if u.is_admin %}status-done{% else %}status-pending{% endif %}">{{ 'Admin' if u.is_admin else 'User' }}</span>
+          {% else %}
+            <form method="post" action="/users/{{ u.id }}/role">
+              <select name="role" onchange="this.form.submit()">
+                <option value="user" {% if not u.is_admin %}selected{% endif %}>User</option>
+                <option value="admin" {% if u.is_admin %}selected{% endif %}>Admin</option>
+              </select>
+            </form>
+          {% endif %}
+        </td>
+        <td>{{ u.created_at }}</td>
+        <td>
+          {% if u.username != username %}
+          <form method="post" action="/users/{{ u.id }}/delete"
+                onsubmit="return confirm('Delete user &quot;{{ u.username }}&quot;?');">
+            <button type="submit" class="danger-btn">Delete</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">No users found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h3>Add a user</h3>
+  <form class="toolbar" method="post" action="/users">
+    <input type="text" name="username" placeholder="Username" required>
+    <input type="password" name="password" placeholder="Password" required>
+    <select name="role">
+      <option value="user">User</option>
+      <option value="admin">Admin</option>
+    </select>
+    <button type="submit">Add user</button>
+  </form>
+  </section>
+{% endblock %}

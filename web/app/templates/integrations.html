@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %} - Integrations{% endblock %}
+
+{% block content %}
+<style>
+  /* Integrations-specific styling */
+  dl.settings-list {
+    display: grid;
+    grid-template-columns: minmax(200px, max-content) 1fr;
+    row-gap: 1rem;
+    column-gap: 2rem;
+    margin-bottom: 2rem;
+  }
+  dl.settings-list dt { font-weight: 500; color: var(--text-secondary); font-size: 0.9rem; padding-top: 0.2rem; }
+  dl.settings-list dd { color: var(--text-primary); font-size: 0.95rem; margin: 0; }
+  dl.settings-list dd code { background: transparent; padding: 0; color: var(--text-primary); }
+
+  .path-input { min-width: 280px; }
+  .toolbar { display: flex; gap: 0.75rem; margin-bottom: 2rem; flex-wrap: wrap; }
+  .flex-row { display: flex; gap: 0.75rem; align-items: center; }
+  .flex-space-between { display: flex; justify-content: space-between; align-items: center; }
+  .text-tertiary { color: var(--text-tertiary); }
+  .text-warning { color: var(--warning); }
+
+  /* Error/success messages */
+  .error-banner, .success-banner {
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius-md);
+    margin-bottom: 1.5rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+  }
+  .error-banner { background: #fff0f0; color: var(--danger); }
+  .success-banner { background: #f0fdf4; color: var(--success); }
+</style>
+
+<h1>Integrations</h1>
+<p class="meta">Connect MediaBridge to external services for enhanced functionality and data synchronization.</p>
+
+{% if error %}
+<div class="error-banner">{{ error }}</div>
+{% endif %}
+{% if flash_status == "success" %}
+<div class="success-banner">{{ flash_message }}</div>
+{% endif %}
+
+<!-- Jellyfin Integration Section -->
+<section class="card" id="jellyfin">
+  <h2>Jellyfin</h2>
+  <p class="meta">Core metadata resolves via local <code>.nfo</code> extraction. Authenticate below to aggregate user-specific telemetry and library syncs.</p>
+
+  {% if jellyfin_config %}
+  <dl class="settings-list" style="margin-bottom: 1.5rem;">
+    <dt>Endpoint</dt>
+    <dd><code>{{ jellyfin_config.server_url }}</code></dd>
+    <dt>Target Account</dt>
+    <dd>
+      {% if jellyfin_config.sync_user_name %}
+        {{ jellyfin_config.sync_user_name }}
+      {% else %}
+        <span style="color: var(--warning);">Pending selection</span>
+      {% endif %}
+    </dd>
+    <dt>API Auth</dt>
+    <dd><span class="status-pill status-done">Verified</span></dd>
+  </dl>
+  {% endif %}
+
+  <form class="toolbar" method="post" action="/settings/jellyfin">
+    <input type="text" name="server_url" placeholder="http://jellyfin:8096" value="{{ jellyfin_config.server_url if jellyfin_config else '' }}" class="path-input" required>
+    <input type="password" name="api_key" placeholder="API Key" value="{{ jellyfin_config.api_key if jellyfin_config else '' }}" style="width: 220px;" required>
+    <button type="submit" class="btn scan-btn">Save Configuration</button>
+  </form>
+
+  {% if jellyfin_config %}
+  <div class="flex-row" style="margin-bottom: 3rem;">
+    <form method="post" action="/settings/jellyfin/test">
+      <button type="submit" class="btn">Test Connection</button>
+    </form>
+    <form method="post" action="/settings/jellyfin/delete" onsubmit="return confirm('Drop Jellyfin configuration? This will pause telemetry sync.');">
+      <button type="submit" class="btn danger-btn">Purge Connection</button>
+    </form>
+  </div>
+
+  <h3>Telemetry Sync</h3>
+  <p class="meta">Define the path transformation matrix. MediaBridge and Jellyfin mounts must align topologically.</p>
+
+  {% if jellyfin_users %}
+  <form class="toolbar" method="post" action="/settings/jellyfin/sync-user">
+    <select name="sync_user_id" required onchange="this.form.sync_user_name.value = this.options[this.selectedIndex].text">
+      <option value="">Select Identity...</option>
+      {% for u in jellyfin_users %}
+        <option value="{{ u.id }}" {% if jellyfin_config.sync_user_id == u.id %}selected{% endif %}>{{ u.name }}</option>
+      {% endfor %}
+    </select>
+    <input type="hidden" name="sync_user_name" value="{{ jellyfin_config.sync_user_name or '' }}">
+
+    <div class="flex-row" style="margin-left: 1rem;">
+      <input type="text" name="path_prefix_from" value="{{ jellyfin_config.path_prefix_from }}" placeholder="Remote Prefix" style="width: 140px;">
+      <span class="text-tertiary">&rarr;</span>
+      <input type="text" name="path_prefix_to" value="{{ jellyfin_config.path_prefix_to }}" placeholder="Local Prefix" style="width: 140px;">
+    </div>
+
+    <button type="submit" class="btn scan-btn">Apply Matrix</button>
+  </form>
+
+  {% if jellyfin_config.sync_user_id %}
+  <div class="flex-space-between" style="background: var(--bg-surface); padding: 1rem 1.5rem; border-radius: var(--radius-sm);">
+    <span class="sync-status-label">Syncing telemetry for <strong>{{ jellyfin_config.sync_user_name }}</strong>. {{ watched_count }} records mapped.</span>
+    <form method="post" action="/settings/jellyfin/sync">
+      <button type="submit" class="btn" style="background: white; border: 1px solid var(--border);">Force Sync Execution</button>
+    </form>
+  </div>
+  {% endif %}
+
+  {% else %}
+  <p class="meta text-warning">Identity fetch failed. Check API credentials.</p>
+  {% endif %}
+  {% endif %}
+</section>
+
+{% endblock %}

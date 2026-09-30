@@ -1,0 +1,317 @@
+{% extends "base.html" %}
+{% block title %} - Jobs{% endblock %}
+{% block content %}
+  <h1>Jobs
+    {% set total_failed = failed_backup_count + failed_restore_count + failed_sync_count %}
+    {% if total_failed %}
+    <form method="post" action="/copy-jobs/clear-all-failed" style="display: inline;" onsubmit="return confirm('Clear all {{ total_failed }} failed run(s) across backups, restores and syncs? This only removes them from this list.');">
+      <button type="submit" class="mini-btn danger-text" style="font-size: 0.75rem;">Clear all {{ total_failed }} failed</button>
+    </form>
+    {% endif %}
+  </h1>
+  {% if message %}<p class="success-banner">{{ message }}</p>{% endif %}
+  <p class="meta">
+    Deeper task internals are on <a href="http://localhost:5555" target="_blank" rel="noopener">Flower</a>.
+  </p>
+
+  <!-- Backup Runs (v2 pipeline: library / single file / selected files) -->
+  <div style="margin-bottom: 2rem;">
+    <h2>Backup Runs
+      {% if failed_backup_count %}
+      <form method="post" action="/copy-jobs/backup-runs/clear-failed" style="display: inline;" onsubmit="return confirm('Clear all {{ failed_backup_count }} failed backup run(s)? This only removes them from this list - nothing already uploaded is affected.');">
+        <button type="submit" class="mini-btn danger-text" style="font-size: 0.75rem;">Clear {{ failed_backup_count }} failed</button>
+      </form>
+      {% endif %}
+    </h2>
+    {% if not runs %}
+      <p class="meta">No cloud backup runs yet. Start one from the Libraries page (whole library) or the catalog (one file, or checked files).</p>
+    {% else %}
+    {% if runs_active %}<p class="meta">A run is active - progress below updates every 2 seconds.</p>{% endif %}
+    <table>
+      <thead>
+        <tr><th>Started</th><th>Scope</th><th>Library</th><th>Status</th><th>Archives</th><th>Files</th><th>Uploaded</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for r in runs %}
+        {% set run = r.run %}
+        <tr>
+          <td>{{ run.created_at.strftime('%Y-%m-%d %H:%M') if run.created_at else '' }}</td>
+          <td>
+            {% if run.scope == 'library' %}Whole library
+            {% elif run.scope == 'file' %}Single file
+            {% else %}Selected files{% endif %}
+            {% if run.encrypted %}<span class="meta" title="Encrypted before upload">&#128274;</span>{% endif %}
+          </td>
+          <td>{{ r.source.name }}</td>
+          <td>
+            <span class="status-pill status-{{ {'queued': 'pending', 'running': 'running', 'done': 'done', 'partial': 'failed', 'failed': 'failed'}[run.status] | default('pending') }}">{{ run.status }}</span>
+            {% if run.status in ('queued', 'running') %}
+            <div class="run-live" data-run-key="backup-{{ run.id }}">
+              <div class="run-live-head"><span class="run-spinner" aria-hidden="true"></span><span class="run-live-label">{{ 'Queued - waiting for a worker' if run.status == 'queued' else 'Working...' }}</span></div>
+              <div class="run-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div class="run-bar-fill"></div></div>
+              <div class="run-live-meta meta"></div>
+            </div>
+            {% endif %}
+            {% if run.detail %}<div class="meta run-detail">{{ run.detail }}</div>{% endif %}
+            {% if run.error_message %}<div class="warn" style="font-size: 0.85rem;">{{ run.error_message }}</div>{% endif %}
+          </td>
+          <td>{% if run.archives_total %}{{ run.archives_done }} / {{ run.archives_total }}{% else %}&ndash;{% endif %}</td>
+          <td>
+            {% if run.status in ('done', 'partial') %}
+              {{ run.files_total }} backed up{% if run.files_skipped %}, {{ run.files_skipped }} skipped{% endif %}
+              {% if r.backed_up %}
+              <details style="font-size: 0.85rem;">
+                <summary style="cursor: pointer;">Show {{ r.backed_up|length }} backed up file{{ "s" if r.backed_up|length != 1 else "" }}</summary>
+                <ul style="margin: 0.5rem 0 0 0; padding-left: 1.5rem;">
+                  {% for entry in r.backed_up[:50] %}<li>{{ entry.path }} <span class="meta">({{ entry.size_bytes | filesizeformat }})</span></li>{% endfor %}
+                  {% if r.backed_up|length > 50 %}<li class="meta">&hellip;and {{ r.backed_up|length - 50 }} more</li>{% endif %}
+                </ul>
+              </details>
+              {% endif %}
+              {% if r.skipped %}
+              <details style="font-size: 0.85rem;">
+                <summary style="cursor: pointer;">
+                  {% for reason, n in r.skip_counts.items() %}{{ n }} {{ reason|replace('_', ' ') }}{% if not loop.last %}, {% endif %}{% endfor %}
+                </summary>
+                <ul style="margin: 0.5rem 0 0 0; padding-left: 1.5rem;">
+                  {% for entry in r.skipped[:50] %}<li>{{ entry.path }} <span class="meta">({{ entry.reason|replace('_', ' ') }})</span></li>{% endfor %}
+                  {% if r.skipped|length > 50 %}<li class="meta">&hellip;and {{ r.skipped|length - 50 }} more</li>{% endif %}
+                </ul>
+              </details>
+              {% endif %}
+            {% elif run.files_total %}{{ run.files_total }} to back up{% else %}&ndash;{% endif %}
+          </td>
+          <td>{{ run.bytes_uploaded | filesizeformat }}</td>
+          <td>
+            {% if run.status in ('queued', 'running') %}
+            <form method="post" action="/copy-jobs/backup-runs/{{ run.id }}/cancel" onsubmit="return confirm('Cancel this backup run? Anything already uploaded stays in the archive - only what\'s left in this run is stopped.');">
+              <button type="submit" class="mini-btn danger-text">Cancel</button>
+            </form>
+            {% elif run.status == 'failed' %}
+            <form method="post" action="/copy-jobs/backup-runs/{{ run.id }}/clear" onsubmit="return confirm('Clear this failed backup run from the list?');">
+              <button type="submit" class="mini-btn danger-text">Clear</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+
+  <!-- Restore Runs (files put back at their original paths from an archive) -->
+  <div style="margin-bottom: 2rem;">
+    <h2>Restore Runs
+      {% if failed_restore_count %}
+      <form method="post" action="/copy-jobs/restore-runs/clear-failed" style="display: inline;" onsubmit="return confirm('Clear all {{ failed_restore_count }} failed restore run(s)? This only removes them from this list - files already restored are unaffected.');">
+        <button type="submit" class="mini-btn danger-text" style="font-size: 0.75rem;">Clear {{ failed_restore_count }} failed</button>
+      </form>
+      {% endif %}
+    </h2>
+    {% if not restores %}
+      <p class="meta">No restores yet. Select files in the catalog and choose Restore.</p>
+    {% else %}
+    <table>
+      <thead>
+        <tr><th>Started</th><th>From archive</th><th>Status</th><th>Files</th><th>Restored</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for r in restores %}
+        {% set run = r.run %}
+        <tr>
+          <td>{{ run.created_at.strftime('%Y-%m-%d %H:%M') if run.created_at else '' }}</td>
+          <td>{{ r.archive.name }}</td>
+          <td>
+            <span class="status-pill status-{{ {'queued': 'pending', 'running': 'running', 'done': 'done', 'partial': 'failed', 'failed': 'failed'}[run.status] | default('pending') }}">{{ run.status }}</span>
+            {% if run.status in ('queued', 'running') %}
+            <div class="run-live" data-run-key="restore-{{ run.id }}">
+              <div class="run-live-head"><span class="run-spinner" aria-hidden="true"></span><span class="run-live-label">{{ 'Queued - waiting for a worker' if run.status == 'queued' else 'Working...' }}</span></div>
+              <div class="run-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div class="run-bar-fill"></div></div>
+              <div class="run-live-meta meta"></div>
+            </div>
+            {% endif %}
+            {% if run.detail %}<div class="meta run-detail">{{ run.detail }}</div>{% endif %}
+            {% if run.error_message %}<div class="warn" style="font-size: 0.85rem;">{{ run.error_message }}</div>{% endif %}
+          </td>
+          <td>
+            {% if run.status in ('done', 'partial', 'failed') %}
+              {{ run.files_done }} restored{% if run.files_failed %}, {{ run.files_failed }} failed{% endif %}
+              {% set failed = r.results | selectattr('status', 'equalto', 'failed') | list %}
+              {% if failed %}
+              <details style="font-size: 0.85rem;">
+                <summary style="cursor: pointer;">why</summary>
+                <ul style="margin: 0.5rem 0 0 0; padding-left: 1.5rem;">
+                  {% for entry in failed[:50] %}<li>{{ entry.path }} <span class="meta">({{ entry.error }})</span></li>{% endfor %}
+                  {% if failed|length > 50 %}<li class="meta">&hellip;and {{ failed|length - 50 }} more</li>{% endif %}
+                </ul>
+              </details>
+              {% endif %}
+            {% elif run.files_total %}{{ run.files_total }} to restore{% else %}&ndash;{% endif %}
+          </td>
+          <td>{{ run.bytes_restored | filesizeformat }}</td>
+          <td>
+            {% if run.status in ('queued', 'running') %}
+            <form method="post" action="/copy-jobs/restore-runs/{{ run.id }}/cancel" onsubmit="return confirm('Cancel this restore run? Files already restored stay in place - only what\'s left in this run is stopped.');">
+              <button type="submit" class="mini-btn danger-text">Cancel</button>
+            </form>
+            {% elif run.status == 'failed' %}
+            <form method="post" action="/copy-jobs/restore-runs/{{ run.id }}/clear" onsubmit="return confirm('Clear this failed restore run from the list?');">
+              <button type="submit" class="mini-btn danger-text">Clear</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+
+  <!-- Sync Runs (portability: pulling a library's content down from a bucket this instance didn't back it up to - see Libraries > Check bucket) -->
+  <div style="margin-bottom: 2rem;">
+    <h2>Sync Runs
+      {% if failed_sync_count %}
+      <form method="post" action="/copy-jobs/sync-runs/clear-failed" style="display: inline;" onsubmit="return confirm('Clear all {{ failed_sync_count }} failed sync run(s)? This only removes them from this list - files already synced are unaffected.');">
+        <button type="submit" class="mini-btn danger-text" style="font-size: 0.75rem;">Clear {{ failed_sync_count }} failed</button>
+      </form>
+      {% endif %}
+    </h2>
+    {% if not syncs %}
+      <p class="meta">No syncs yet. On the <a href="/libraries">Libraries</a> page, use "Check bucket" on a library with an archive assigned.</p>
+    {% else %}
+    <table>
+      <thead>
+        <tr><th>Started</th><th>Library</th><th>Status</th><th>Files</th><th>Synced</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for r in syncs %}
+        {% set run = r.run %}
+        <tr>
+          <td>{{ run.created_at.strftime('%Y-%m-%d %H:%M') if run.created_at else '' }}</td>
+          <td>{{ r.library.name }}</td>
+          <td>
+            <span class="status-pill status-{{ {'queued': 'pending', 'running': 'running', 'done': 'done', 'partial': 'failed', 'failed': 'failed'}[run.status] | default('pending') }}">{{ run.status }}</span>
+            {% if run.status in ('queued', 'running') %}
+            <div class="run-live" data-run-key="sync-{{ run.id }}">
+              <div class="run-live-head"><span class="run-spinner" aria-hidden="true"></span><span class="run-live-label">{{ 'Queued - waiting for a worker' if run.status == 'queued' else 'Working...' }}</span></div>
+              <div class="run-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div class="run-bar-fill"></div></div>
+              <div class="run-live-meta meta"></div>
+            </div>
+            {% endif %}
+            {% if run.detail %}<div class="meta run-detail">{{ run.detail }}</div>{% endif %}
+            {% if run.error_message %}<div class="warn" style="font-size: 0.85rem;">{{ run.error_message }}</div>{% endif %}
+          </td>
+          <td>
+            {% if run.status in ('done', 'partial', 'failed') %}
+              {{ run.files_synced }} synced{% if run.files_skipped %}, {{ run.files_skipped }} skipped{% endif %}{% if run.files_failed %}, {{ run.files_failed }} failed{% endif %}
+              {% set notable = r.results | rejectattr('status', 'equalto', 'synced') | list %}
+              {% if notable %}
+              <details style="font-size: 0.85rem;">
+                <summary style="cursor: pointer;">why</summary>
+                <ul style="margin: 0.5rem 0 0 0; padding-left: 1.5rem;">
+                  {% for entry in notable[:50] %}<li>{{ entry.path }} <span class="meta">({{ entry.status }}{% if entry.error %}: {{ entry.error }}{% endif %})</span></li>{% endfor %}
+                  {% if notable|length > 50 %}<li class="meta">&hellip;and {{ notable|length - 50 }} more</li>{% endif %}
+                </ul>
+              </details>
+              {% endif %}
+            {% elif run.files_total %}{{ run.files_total }} found{% else %}&ndash;{% endif %}
+          </td>
+          <td>{{ run.bytes_synced | filesizeformat }}</td>
+          <td>
+            {% if run.status in ('queued', 'running') %}
+            <form method="post" action="/copy-jobs/sync-runs/{{ run.id }}/cancel" onsubmit="return confirm('Cancel this sync run? Files already synced stay in place - only what\'s left in this run is stopped.');">
+              <button type="submit" class="mini-btn danger-text">Cancel</button>
+            </form>
+            {% elif run.status == 'failed' %}
+            <form method="post" action="/copy-jobs/sync-runs/{{ run.id }}/clear" onsubmit="return confirm('Clear this failed sync run from the list?');">
+              <button type="submit" class="mini-btn danger-text">Clear</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+
+  <style>
+    .run-live { margin-top: 0.4rem; min-width: 16rem; }
+    .run-live-head { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; }
+    .run-spinner { width: 0.85rem; height: 0.85rem; border: 2px solid #c8d3e0; border-top-color: #2b7de9; border-radius: 50%; animation: run-spin 0.9s linear infinite; flex: none; }
+    .run-live.stale .run-spinner { border-top-color: #e0a100; animation-duration: 2.5s; }
+    .run-live.stalled .run-spinner { border-top-color: #d33; animation: none; }
+    @keyframes run-spin { to { transform: rotate(360deg); } }
+    .run-bar { height: 0.55rem; background: #e6ebf1; border-radius: 0.3rem; overflow: hidden; margin: 0.35rem 0 0.25rem; }
+    .run-bar-fill { height: 100%; width: 0; background: #2b7de9; transition: width 0.6s ease; }
+    .run-live.stalled .run-bar-fill { background: #d33; }
+    .run-bar.indeterminate .run-bar-fill { width: 35%; animation: run-slide 1.3s ease-in-out infinite alternate; }
+    @keyframes run-slide { from { margin-left: 0; } to { margin-left: 65%; } }
+    .run-live-meta { font-size: 0.8rem; }
+    .run-live.stalled .run-live-meta { color: #d33; }
+  </style>
+  {% if runs_active %}
+  <script>
+  (function () {
+    var POLL_MS = 2000, reloading = false;
+    function bytes(n) {
+      var u = ['B', 'KB', 'MB', 'GB', 'TB'], i = 0;
+      while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+      return (i === 0 ? n.toFixed(0) : n.toFixed(n < 10 ? 2 : 1)) + ' ' + u[i];
+    }
+    function dur(s) {
+      s = Math.round(s);
+      if (s < 60) return s + 's';
+      if (s < 3600) return Math.floor(s / 60) + 'm ' + (s % 60) + 's';
+      return Math.floor(s / 3600) + 'h ' + Math.floor(s % 3600 / 60) + 'm';
+    }
+    function render(run) {
+      var box = document.querySelector('.run-live[data-run-key="' + run.key + '"]');
+      if (!box) return;
+      if (!run.active) { if (!reloading) { reloading = true; location.reload(); } return; }
+      var label = box.querySelector('.run-live-label'), bar = box.querySelector('.run-bar'),
+          fill = box.querySelector('.run-bar-fill'), meta = box.querySelector('.run-live-meta');
+      var text, parts = [];
+      if (run.status === 'queued') {
+        text = 'Queued - waiting for a worker'; bar.classList.add('indeterminate');
+      } else if (!run.phase) {
+        text = 'Starting...'; bar.classList.add('indeterminate');
+      } else {
+        text = run.label;
+        if (run.total > 0) {
+          bar.classList.remove('indeterminate');
+          fill.style.width = run.percent.toFixed(1) + '%';
+          text += ' - ' + Math.floor(run.percent) + '%';
+          parts.push(run.unit === 'bytes' ? bytes(run.done) + ' of ' + bytes(run.total) : run.done + ' of ' + run.total + ' files');
+        } else {
+          bar.classList.add('indeterminate');
+        }
+        if (run.rate) parts.push(run.unit === 'bytes' ? bytes(run.rate) + '/s' : run.rate.toFixed(1) + ' files/s');
+        if (run.eta_seconds) parts.push('about ' + dur(run.eta_seconds) + ' left');
+      }
+      if (run.archives_total && run.phase !== 'restoring') parts.push('archive ' + Math.min(run.archives_done + 1, run.archives_total) + ' of ' + run.archives_total);
+      if (run.elapsed) parts.push(dur(run.elapsed) + ' elapsed');
+      var age = run.heartbeat_age;
+      box.classList.toggle('stalled', !!run.stalled);
+      box.classList.toggle('stale', !run.stalled && age !== null && age > 30);
+      if (run.stalled) parts.push('no progress reported for ' + dur(age) + ' - may be stuck, check the worker logs');
+      label.textContent = text;
+      meta.textContent = parts.join(' \u00b7 ');
+      var detail = box.parentElement.querySelector('.run-detail');
+      if (detail && run.detail) detail.textContent = run.detail;
+    }
+    function poll() {
+      fetch('/copy-jobs/runs/status', { credentials: 'same-origin' })
+        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(function (data) { data.runs.forEach(render); })
+        .catch(function () {
+          document.querySelectorAll('.run-live-meta').forEach(function (m) { m.textContent = 'connection lost - retrying...'; });
+        })
+        .then(function () { if (!reloading) setTimeout(poll, POLL_MS); });
+    }
+    poll();
+  })();
+  </script>
+  {% endif %}
+{% endblock %}

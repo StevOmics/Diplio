@@ -1,0 +1,981 @@
+{% extends "base.html" %}
+{% block title %} - Settings{% endblock %}
+
+{% block content %}
+<style>
+  /* Settings-specific structural refinements */
+  .tier-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+    background: var(--bg-surface);
+    padding: 1.5rem;
+    border-radius: var(--radius-md);
+    margin-bottom: 2rem;
+    border: 1px solid var(--border);
+  }
+  .tier-card h4 { font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
+  .tier-card p { font-size: 1rem; font-weight: 500; color: var(--text-primary); margin-bottom: 0.25rem; }
+  .tier-card span { font-size: 0.85rem; color: var(--text-tertiary); display: block; }
+
+  dl.settings-list {
+    display: grid;
+    grid-template-columns: minmax(200px, max-content) 1fr;
+    row-gap: 1rem;
+    column-gap: 2rem;
+    margin-bottom: 2rem;
+  }
+  dl.settings-list dt { font-weight: 500; color: var(--text-secondary); font-size: 0.9rem; padding-top: 0.2rem; }
+  dl.settings-list dd { color: var(--text-primary); font-size: 0.95rem; margin: 0; }
+  dl.settings-list dd code { background: transparent; padding: 0; color: var(--text-primary); }
+
+  /* Input sizing */
+  .table-input { width: 100%; min-width: 120px; }
+  .path-input { min-width: 280px; }
+
+  /* Container utilities */
+  .overflow-x { overflow-x: auto; margin-bottom: 2rem; }
+  .grid-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-top: 3rem; }
+  .flex-row { display: flex; gap: 0.75rem; align-items: center; }
+  .flex-row-wrap { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+  .flex-col { display: flex; flex-direction: column; gap: 0.75rem; }
+  .flex-baseline { display: flex; align-items: flex-end; margin-bottom: 1.25rem; }
+  .flex-space-between { display: flex; justify-content: space-between; align-items: center; }
+
+  /* Typography utilities */
+  .text-mono { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.85rem; }
+  .text-small { font-size: 0.85rem; }
+  .text-tiny { font-size: 0.8rem; }
+  .text-secondary { color: var(--text-secondary); }
+  .text-tertiary { color: var(--text-tertiary); }
+  .text-warning { color: var(--warning); }
+  .text-danger { color: var(--danger); }
+  .text-success { color: var(--success); }
+
+  /* Special row in table for status/unreachable */
+  .table-row-meta { color: var(--warning); font-size: 0.8rem; display: block; margin-top: 0.25rem; }
+
+  /* Dialog & section styling */
+  .section-divider { border-top: 1px solid var(--border); margin: 1.5rem 0; padding-top: 1.5rem; }
+  .sync-status { display: flex; align-items: center; gap: 1rem; margin-bottom: 2rem; }
+  .sync-status-label { font-size: 0.95rem; font-weight: 500; }
+
+  /* Cloud provider panels - one per provider inside the Cloud Storage card */
+  .provider-panel { border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.25rem 1.5rem; margin-top: 1.5rem; background: var(--bg-surface); }
+  .provider-panel-header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; padding-bottom: 0.75rem; margin-bottom: 0.5rem; border-bottom: 1px solid var(--border); }
+  .provider-panel-header h3 { margin: 0; }
+  .provider-panel-status { display: flex; align-items: center; gap: 0.5rem; }
+  /* Cloud storage status box */
+  .cloud-status-bound { padding: 1rem; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: var(--radius-sm); margin: 1.5rem 0; font-weight: 500; color: var(--success); }
+
+  /* Form section grouping */
+  .form-section { display: flex; flex-wrap: wrap; gap: 2rem; margin-bottom: 3rem; }
+  .form-inline { display: flex; gap: 0.5rem; width: 100%; }
+  .form-controls { display: flex; align-items: flex-end; margin-bottom: 1.25rem; gap: 0.75rem; }
+
+  /* Navigation breadcrumb styling */
+  .breadcrumb-nav { font-size: 0.85rem; color: var(--text-secondary); font-family: ui-monospace, monospace; }
+  .breadcrumb-sep { color: var(--text-tertiary); }
+
+  /* Folder list styling */
+  .folder-empty { color: var(--text-tertiary); font-size: 0.85rem; padding: 0.5rem 0.75rem; }
+  .folder-list-item-btn { width: 100%; text-align: left; background: transparent; padding: 0.5rem 0.75rem; font-size: 0.9rem; border-radius: var(--radius-sm); }
+  .folder-list-item-btn:hover { background: var(--bg-surface); }
+
+  /* Table empty state */
+  .table-empty { color: var(--text-tertiary); text-align: center; padding: 2rem 0; }
+</style>
+
+<h1>Settings</h1>
+
+{% if error %}<div class="error-banner">{{ error }}</div>{% endif %}
+{% if flash_status == 'ok' %}<div class="success-banner">{{ flash_message }}</div>{% endif %}
+{% if flash_status == 'error' %}<div class="error-banner">{{ flash_message }}</div>{% endif %}
+
+<!-- 1. Backup Archiving -->
+<section class="card" id="backup-archiving">
+  <h2>Backup Archiving</h2>
+  <p class="meta">Configure file archival rules, encryption, and network constraints for backup operations.</p>
+
+  <h3>Archive Geometry</h3>
+  <p class="meta">Manage payload geometry for archival processes. Small files are packed into archives, standard files transfer continuously, and oversized files are split into fragments.</p>
+
+  {% set tc = transfer_config %}
+  <div class="tier-grid">
+    <div class="tier-card">
+      <h4>Small Assets</h4>
+      <p>&lt; {{ "%.0f"|format((tc.min_size_bytes / 1048576) if tc else 10) }} MiB</p>
+      <span>Packed into monolithic archives.</span>
+    </div>
+    <div class="tier-card">
+      <h4>Standard Assets</h4>
+      <p>{{ "%.0f"|format((tc.min_size_bytes / 1048576) if tc else 10) }} &ndash; {{ "%.0f"|format((tc.max_size_bytes / 1048576) if tc else 1024) }} MiB</p>
+      <span>Transferred continuously.</span>
+    </div>
+    <div class="tier-card">
+      <h4>Oversize Assets</h4>
+      <p>&gt; {{ "%.0f"|format((tc.max_size_bytes / 1048576) if tc else 1024) }} MiB</p>
+      <span>Fragmented via multi-part upload.</span>
+    </div>
+  </div>
+
+  <form class="form-section" method="post" action="/settings/backup-archiving">
+    <div class="field">
+      <label>Pack files smaller than (MiB)</label>
+      <input type="number" name="min_size_mib" min="0.1" step="1" value="{{ (tc.min_size_bytes / 1048576) if tc else 10 }}">
+      <span style="font-size: 0.8rem; color: var(--text-tertiary); display: block; margin-top: 0.25rem;">Smaller files are packed together into shared archives.</span>
+    </div>
+    <div class="field">
+      <label>Split files larger than (MiB)</label>
+      <input type="number" name="max_size_mib" min="64" step="1" value="{{ (tc.max_size_bytes / 1048576) if tc else 1024 }}">
+      <span style="font-size: 0.8rem; color: var(--text-tertiary); display: block; margin-top: 0.25rem;">Larger files are split into parts, none bigger than this. Minimum 64 MiB. Default 1024 MiB (1 GiB), so only files bigger than that are split.</span>
+    </div>
+    <div class="field">
+      <label>Backup run batch size (GiB)</label>
+      <input type="number" name="batch_gib" min="1" step="0.5" value="{{ (tc.batch_bytes / 1073741824) if tc else 5 }}">
+      <span style="font-size: 0.8rem; color: var(--text-tertiary); display: block; margin-top: 0.25rem;">A library or selection backup larger than this is split into several runs instead of one, so the worker never has to hold more than about this much compressed/encrypted data on local disk at a time. Doesn't limit a single file larger than this on its own.</span>
+    </div>
+    <div class="field">
+      <label>Cloud Object Prefix</label>
+      <input type="text" name="prefix" value="{{ cloud_storage_config.prefix if cloud_storage_config else '' }}" placeholder="node-01/">
+    </div>
+    <div class="flex-baseline">
+      <button type="submit" class="btn scan-btn">Apply Geometry</button>
+    </div>
+  </form>
+
+  <div class="section-divider">
+    <h3>Compression</h3>
+    <p class="meta">Optionally gzip each file before it is encrypted and uploaded (standard gzip, so <code>gunzip</code> reads it). Files that are already compressed (video, most images and audio, zip-based documents) or that would shrink by less than 5% are stored as-is. Applies to new and changed files only - files already backed up are not re-uploaded, and existing backups restore exactly as before.</p>
+
+    <form class="form-section" method="post" action="/settings/compression">
+      <label class="field-check">
+        <input type="checkbox" name="compression_enabled" value="true" {% if tc and tc.compression_enabled %}checked{% endif %}>
+        Compress files before upload
+      </label>
+      <div class="field">
+        <label>Compression level (1-9)</label>
+        <input type="number" name="compression_level" min="1" max="9" step="1" value="{{ tc.compression_level if tc and tc.compression_level else 6 }}">
+        <span style="font-size: 0.8rem; color: var(--text-tertiary); display: block; margin-top: 0.25rem;">Higher is smaller but slower (default: 6)</span>
+      </div>
+      <div class="flex-baseline">
+        <button type="submit" class="btn scan-btn">Save Compression Settings</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="section-divider">
+    <h3>Encryption Architecture</h3>
+    <p class="meta">Applies AES-256-GCM derivation for all egress backups. Files receive distinct cryptographic keys bound to the core passphrase. <strong>Irrecoverable if every copy of the passphrase is lost.</strong></p>
+
+    <div class="sync-status">
+      <span class="sync-status-label">Status:</span>
+      {% if backup_encryption_config and backup_encryption_config.enabled %}
+        <span class="status-pill status-done">Active</span>
+      {% else %}
+        <span class="status-pill status-pending">Inactive</span>
+      {% endif %}
+
+      {% if backup_encryption_config and backup_encryption_config.password %}
+        <button type="button" class="mini-btn" data-passphrase="{{ backup_encryption_config.password }}" onclick="mbCopyPassphrase(this)">Export Passphrase to Clipboard</button>
+      {% endif %}
+    </div>
+
+    {% if key_versions %}
+    <div class="sync-status" style="flex-wrap: wrap; gap: 0.5rem;">
+      <span class="sync-status-label">Key history:</span>
+      <select id="key-history-select" aria-label="Key history">
+        {% for kv in key_versions %}
+        <option value="{{ kv.row.id }}" data-passphrase="{{ kv.row.password }}">
+          v{{ kv.number }}{% if kv.current %} (current){% endif %} &mdash; set {{ kv.row.created_at.strftime('%Y-%m-%d') }}{% if kv.row.retired_at %}, retired {{ kv.row.retired_at.strftime('%Y-%m-%d') }}{% endif %} &middot; {{ kv.archives }} archive{{ '' if kv.archives == 1 else 's' }}
+        </option>
+        {% endfor %}
+      </select>
+      <button type="button" class="mini-btn" onclick="mbCopyPassphrase(this)" data-source="key-history-select">Copy Selected Key</button>
+    </div>
+    <p class="meta">Changing the passphrase keeps the old one here, and backups stay restorable with the key that encrypted them. Only new backups use the new key; unchanged files are not re-encrypted. Copy an old key if you need to decrypt outside MediaBridge.</p>
+    {% endif %}
+
+    <form class="toolbar" method="post" action="/settings/backup-encryption" onsubmit="return !this.password.value || {{ 'true' if not (backup_encryption_config and backup_encryption_config.password) else 'confirm(\'Rotate the backup passphrase? Content already archived stays encrypted under the OLD key indefinitely - it is NOT re-encrypted. The old key is kept in Key History so existing backups stay restorable, but if you lose that old passphrase (and its Key History row), that content becomes permanently unreadable. New backups use the new key.\')' }};">
+      <div class="flex-col" style="width: 100%; max-width: 500px;">
+        <div class="form-inline">
+          <input type="password" id="bge-password" name="password" placeholder="Passphrase (Null maintains current)" style="flex: 1;">
+          <button type="button" class="btn" style="background: var(--bg-surface); border: 1px solid var(--border);" onclick="mbGeneratePassphrase()">Generate</button>
+        </div>
+
+        <details style="margin: 0.5rem 0;">
+          <summary style="cursor: pointer; font-size: 0.85rem; color: var(--text-secondary);">Advanced: portability (reconnect to another instance's encrypted backups)</summary>
+          <div style="padding: 0.75rem 0 0.25rem;">
+            <p class="meta text-small">
+              A passphrase alone isn't the whole key - it's combined with a salt that's normally generated randomly when the passphrase is first set, so the same passphrase on a fresh instance makes a <em>different</em> key by default. The salt itself isn't secret (see <code>docs/backup-plan/steps/18-portability.md</code>), just needed alongside the passphrase to reproduce an existing key exactly - e.g. when moving to a new computer and pointing it at a bucket that already has encrypted backups.
+            </p>
+            {% if backup_encryption_config and backup_encryption_config.kdf_salt %}
+            <div class="sync-status">
+              <span class="sync-status-label">This instance's current salt:</span>
+              <code id="bge-current-salt">{{ backup_encryption_config.kdf_salt }}</code>
+              <button type="button" class="mini-btn" onclick="mbCopySalt()">Copy</button>
+            </div>
+            <p class="meta text-small">Copy this (with the passphrase) before decommissioning this instance, so a new one can be reconnected.</p>
+            {% endif %}
+            <div class="field" style="margin-top: 0.5rem;">
+              <label>Salt from the other instance (only when reconnecting)</label>
+              <input type="text" name="salt" placeholder="32 hex characters - leave blank for a new random salt" pattern="[0-9a-fA-F]{32}" maxlength="32" style="font-family: monospace;">
+              <span style="font-size: 0.8rem; color: var(--text-tertiary); display: block; margin-top: 0.25rem;">Must be paired with that same instance's passphrase above, or the reproduced key will be wrong and restores will fail.</span>
+            </div>
+          </div>
+        </details>
+
+        <div style="display: flex; gap: 1.5rem; align-items: center;">
+          <label class="field-check">
+            <input type="checkbox" id="bge-show" onchange="document.getElementById('bge-password').type = this.checked ? 'text' : 'password';">
+            <span>Reveal Input</span>
+          </label>
+          <label class="field-check">
+            <input type="checkbox" name="enabled" value="true" {% if backup_encryption_config and backup_encryption_config.enabled %}checked{% endif %}>
+            <span>Enforce on Egress</span>
+          </label>
+        </div>
+
+        <button type="submit" class="btn scan-btn" style="align-self: flex-start;">Commit Encryption Policy</button>
+      </div>
+    </form>
+
+    <script>
+      function mbGeneratePassphrase() {
+        const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        const values = new Uint32Array(32);
+        window.crypto.getRandomValues(values);
+        let passphrase = "";
+        for (let i = 0; i < values.length; i++) passphrase += charset[values[i] % charset.length];
+        const field = document.getElementById("bge-password");
+        field.value = passphrase;
+        field.type = "text";
+        document.getElementById("bge-show").checked = true;
+      }
+
+      function mbCopyPassphrase(button) {
+        // A button can name a <select> (data-source) whose selected option holds the key.
+        const source = button.dataset.source && document.getElementById(button.dataset.source);
+        const text = source ? source.selectedOptions[0].dataset.passphrase : button.dataset.passphrase;
+        const onCopied = () => {
+          const original = button.textContent;
+          button.textContent = "Copied.";
+          setTimeout(() => { button.textContent = original; }, 2000);
+        };
+        if (window.isSecureContext && navigator.clipboard) {
+          navigator.clipboard.writeText(text).then(onCopied).catch(() => mbFallbackCopy(text, onCopied));
+        } else {
+          mbFallbackCopy(text, onCopied);
+        }
+      }
+
+      function mbCopySalt() {
+        const el = document.getElementById("bge-current-salt");
+        const button = event.target;
+        const text = el.textContent;
+        const onCopied = () => {
+          const original = button.textContent;
+          button.textContent = "Copied.";
+          setTimeout(() => { button.textContent = original; }, 2000);
+        };
+        if (window.isSecureContext && navigator.clipboard) {
+          navigator.clipboard.writeText(text).then(onCopied).catch(() => mbFallbackCopy(text, onCopied));
+        } else {
+          mbFallbackCopy(text, onCopied);
+        }
+      }
+
+      function mbFallbackCopy(text, onCopied) {
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        try { document.execCommand("copy"); onCopied(); }
+        catch (e) { alert("Clipboard write denied. Key: " + text); }
+        document.body.removeChild(textarea);
+      }
+    </script>
+  </div>
+</section>
+
+
+
+
+
+
+
+
+
+<!-- 2. Cloud Storage -->
+<section class="card" id="cloud-storage">
+  <h2>Cloud Storage</h2>
+  <p class="meta">Where backups are stored. Each bucket folder you add becomes an archive that libraries can be assigned to.</p>
+
+  {% set cs = cloud_storage_config %}
+  <!-- Provider panel: Google Cloud. Add further providers as sibling .provider-panel blocks. -->
+  <div class="provider-panel" id="cloud-provider-gcs">
+    <div class="provider-panel-header">
+      <h3>Google Cloud</h3>
+      <div class="provider-panel-status">
+        {% if cs and cs.connected and cs.bucket_name %}
+          <span class="status-pill status-done">Connected</span>
+          <span class="meta text-mono" style="margin: 0;">{{ cs.bucket_name }}</span>
+        {% elif cs and cs.service_account_email %}
+          <span class="status-pill status-running">Key added &ndash; choose a bucket</span>
+        {% else %}
+          <span class="status-pill status-pending">Not connected</span>
+        {% endif %}
+      </div>
+    </div>
+    <p class="meta">Provision a Google Cloud Storage bucket as an off-site backup destination.</p>
+
+  <h3 style="margin-top: 1.5rem;">1. IAM Provisioning</h3>
+  <p class="meta">Generate an IAM service account in Google Cloud Console. Required Policies: <strong>Storage Admin</strong> (project-level resolution) or <strong>Storage Object Admin</strong> (bucket-scoped resolution).</p>
+
+  <h3>2. Cryptographic Key Import</h3>
+  {% if cs and cs.service_account_email %}
+    <p class="meta text-mono" style="color: var(--success);">
+      Identity: {{ cs.service_account_email }} <br>
+      Context: {{ cs.project_id }}
+    </p>
+  {% endif %}
+  <form class="toolbar" method="post" action="/settings/cloud-storage/credentials" enctype="multipart/form-data">
+    <input type="file" name="key_file" accept="application/json,.json" style="background: transparent; border: none; padding: 0;" required>
+    <button type="submit" class="btn scan-btn">Inject JSON Key</button>
+  </form>
+
+  <h3>3. Bucket Resolution</h3>
+  {% if not cs or not cs.service_account_json %}
+    <p class="meta">Require IAM credential injection to proceed.</p>
+  {% else %}
+    <div class="flex-row-wrap" style="margin-bottom: 1.5rem;">
+      <form method="post" action="/settings/cloud-storage/list-buckets">
+        <button type="submit" class="btn" style="background: var(--bg-surface); border: 1px solid var(--border);">Poll Available Buckets</button>
+      </form>
+
+      {% if cloud_storage_buckets %}
+        <form method="post" action="/settings/cloud-storage/bucket" style="display: flex; gap: 0.5rem;">
+          <select name="bucket_name" class="path-input">
+            {% for b in cloud_storage_buckets %}
+              <option value="{{ b }}" {% if b == cs.bucket_name %}selected{% endif %}>{{ b }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn scan-btn">Bind</button>
+        </form>
+      {% endif %}
+    </div>
+
+    <form class="toolbar" method="post" action="/settings/cloud-storage/bucket">
+      <input type="text" name="bucket_name" placeholder="Manual Bucket Target" class="path-input">
+      <button type="submit" class="btn scan-btn">Bind Target</button>
+    </form>
+
+    <h4 style="margin: 1.5rem 0 0.25rem;">Add as archive</h4>
+    <p class="meta">Pick a bucket and a directory inside it. The result is a <code>gs://bucket/directory</code> archive that libraries can be assigned to. The directory is created on first backup if it doesn't exist yet. The storage tier is set now and can't be changed later; it applies to objects uploaded from here on.</p>
+    <form class="toolbar" method="post" action="/settings/cloud-storage/archives" onsubmit="return mbPrepareArchivePath(this);">
+      <input type="text" name="name" placeholder="Name (optional)">
+      <input type="text" id="arch-bucket" list="cloud-bucket-choices" placeholder="bucket" value="{{ cs.bucket_name or '' }}" class="path-input" required>
+      <datalist id="cloud-bucket-choices">
+        {% for b in cloud_storage_buckets %}<option value="{{ b }}">{% endfor %}
+      </datalist>
+      <div class="form-inline">
+        <input type="text" id="arch-dir" placeholder="directory (bucket root)" class="path-input">
+        <button type="button" class="mini-btn" onclick="mbOpenBucketBrowser()">Browse&hellip;</button>
+      </div>
+      <input type="hidden" name="path" id="arch-path">
+      <select name="storage_class" title="Storage tier for objects in this archive. Cannot be changed after the archive is added.">
+        <option value="">Bucket default tier</option>
+        <option value="STANDARD">Standard</option>
+        <option value="NEARLINE">Nearline</option>
+        <option value="COLDLINE">Coldline</option>
+        <option value="ARCHIVE">Archive</option>
+      </select>
+      <button type="submit" class="btn scan-btn">Add as Archive</button>
+    </form>
+
+    {% if cs.connected %}
+      <div class="cloud-status-bound">Bound to {{ cs.bucket_name }}</div>
+    {% elif cs.last_error %}
+      <div class="error-banner">{{ cs.last_error }}</div>
+    {% endif %}
+
+    {% if cs.connected %}
+      <h3>Throughput Analysis</h3>
+      <p class="meta">Executes a 5MB transient I/O test to calculate effective bandwidth.</p>
+      <form method="post" action="/settings/cloud-storage/test-speed" style="margin-bottom: 1rem;">
+        <button type="submit" class="btn" style="background: var(--bg-surface); border: 1px solid var(--border);">Execute I/O Diagnostic</button>
+      </form>
+
+      {% if cs.last_speed_test_at %}
+        <dl class="settings-list" style="margin-bottom: 1.5rem;">
+          <dt>Timestamp</dt><dd>{{ cs.last_speed_test_at }}</dd>
+          <dt>Raw Upload</dt><dd>{{ "%.1f"|format(cs.upload_mbps) }} Mbps</dd>
+          <dt>Raw Download</dt><dd>{{ "%.1f"|format(cs.download_mbps) }} Mbps</dd>
+          <dt>Effective Cap</dt>
+          <dd>
+            {{ "%.1f"|format(cloud_effective_upload_mbps) }} Mbps ({{ "%.0f"|format(100 * (cloud_effective_upload_mbps / cs.upload_mbps if cs.upload_mbps else 0)) }}% limit)
+          </dd>
+          {% if cloud_backup_eta %}
+          <dt>System ETA</dt>
+          <dd>{{ cloud_backup_eta }} for {{ cloud_library_total_bytes | filesizeformat }}</dd>
+          {% endif %}
+        </dl>
+      {% endif %}
+
+      <p class="meta">
+        Uploads default to half of the last measured speed above{% if not cs.last_speed_test_at %} (or {{ "%.0f"|format(default_upload_cap_mbps) }} Mbps before a diagnostic has run){% endif %}, so a backup doesn't saturate the connection.
+        Set a limit below to override that - lower to leave more headroom for everything else on the connection.
+        Currently in effect: <strong>{{ "%.1f"|format(cloud_effective_upload_mbps) }} Mbps</strong>.
+      </p>
+      <form class="form-section" method="post" action="/settings/bandwidth" style="margin-bottom: 1.5rem;">
+        <div class="field">
+          <label>Speed limit (Mbps)</label>
+          <input
+            type="number" name="max_upload_mbps" min="0.1"
+            {% if cs.upload_mbps %}max="{{ cs.upload_mbps }}"{% endif %}
+            step="0.1" placeholder="Automatic" value="{{ tc.max_upload_mbps if tc and tc.max_upload_mbps else '' }}">
+          <span style="font-size: 0.8rem; color: var(--text-tertiary); display: block; margin-top: 0.25rem;">
+            Leave blank to use the automatic default.
+            {% if cs.upload_mbps %}Can't exceed the last measured raw upload speed ({{ "%.1f"|format(cs.upload_mbps) }} Mbps) - run the diagnostic again first if your connection has improved.{% else %}Run the diagnostic above first to bound this to your actual connection speed.{% endif %}
+            Applies to new/resumed backup runs, not ones already uploading.
+          </span>
+        </div>
+        <div class="flex-baseline">
+          <button type="submit" class="btn scan-btn">Save Speed Limit</button>
+        </div>
+      </form>
+
+      <div class="section-divider">
+        <div class="flex-space-between">
+          <p class="meta text-small" style="margin: 0;">Removes the service account key and the bucket bind. Archives you've added stay listed but can't be used until a key is added again.</p>
+          <form method="post" action="/settings/cloud-storage/disconnect" onsubmit="return confirm('Purge IAM credentials and sever bucket bind?');">
+            <button type="submit" class="btn danger-btn">Sever Bind</button>
+          </form>
+        </div>
+      </div>
+    {% endif %}
+  {% endif %}
+
+  </div>
+
+
+  {% set s3c = s3_config %}
+  <div class="provider-panel" id="aws-provider">
+    <div class="provider-panel-header">
+      <h3>Amazon Web Services (S3)</h3>
+      <div class="provider-panel-status">
+        {% if s3c and s3c.connected and s3c.bucket_name %}
+          <span class="status-pill status-done">Connected</span>
+          <span class="meta text-mono" style="margin: 0;">{{ s3c.bucket_name }}</span>
+        {% elif s3c and s3c.access_key_id %}
+          <span class="status-pill status-running">Key added &ndash; choose a bucket</span>
+        {% else %}
+          <span class="status-pill status-pending">Not connected</span>
+        {% endif %}
+      </div>
+    </div>
+    <p class="meta">Provision an S3 bucket as an off-site backup destination.</p>
+
+    <h3 style="margin-top: 1.5rem;">1. IAM Credentials</h3>
+    <p class="meta">Create an IAM user/role with programmatic access. Required Policies: <strong>AmazonS3FullAccess</strong> (or a bucket-scoped equivalent).</p>
+    {% if s3c and s3c.access_key_id %}
+      <p class="meta text-mono" style="color: var(--success);">
+        Access key: {{ s3c.access_key_id }}{% if s3c.region %} <br>Region: {{ s3c.region }}{% endif %}
+      </p>
+    {% endif %}
+    <form class="toolbar" method="post" action="/settings/s3-storage/credentials">
+      <input type="text" name="access_key_id" placeholder="Access key ID" class="path-input" required>
+      <input type="password" name="secret_access_key" placeholder="Secret access key" class="path-input" required autocomplete="new-password">
+      <input type="text" name="region" placeholder="Region (e.g. us-east-1)" class="path-input">
+      <button type="submit" class="btn scan-btn">Save Credentials</button>
+    </form>
+
+    <h3>2. Bucket Resolution</h3>
+    {% if not s3c or not s3c.access_key_id %}
+      <p class="meta">Save AWS credentials to proceed.</p>
+    {% else %}
+      <div class="flex-row-wrap" style="margin-bottom: 1.5rem;">
+        <form method="post" action="/settings/s3-storage/list-buckets">
+          <button type="submit" class="btn" style="background: var(--bg-surface); border: 1px solid var(--border);">Poll Available Buckets</button>
+        </form>
+
+        {% if s3_buckets %}
+          <form method="post" action="/settings/s3-storage/bucket" style="display: flex; gap: 0.5rem;">
+            <select name="bucket_name" class="path-input">
+              {% for b in s3_buckets %}
+                <option value="{{ b }}" {% if b == s3c.bucket_name %}selected{% endif %}>{{ b }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="btn scan-btn">Bind</button>
+          </form>
+        {% endif %}
+      </div>
+
+      <form class="toolbar" method="post" action="/settings/s3-storage/bucket">
+        <input type="text" name="bucket_name" placeholder="Manual Bucket Target" class="path-input">
+        <button type="submit" class="btn scan-btn">Bind Target</button>
+      </form>
+
+      <h4 style="margin: 1.5rem 0 0.25rem;">Add as archive</h4>
+      <p class="meta">Pick a bucket and a directory inside it. The result is an <code>s3://bucket/directory</code> archive that libraries can be assigned to. The directory is created on first backup if it doesn't exist yet. The storage class is set now and can't be changed later; it applies to objects uploaded from here on.</p>
+      <form class="toolbar" method="post" action="/settings/s3-storage/archives" onsubmit="return mbPrepareS3ArchivePath(this);">
+        <input type="text" name="name" placeholder="Name (optional)">
+        <input type="text" id="s3-arch-bucket" list="s3-bucket-choices" placeholder="bucket" value="{{ s3c.bucket_name or '' }}" class="path-input" required>
+        <datalist id="s3-bucket-choices">
+          {% for b in s3_buckets %}<option value="{{ b }}">{% endfor %}
+        </datalist>
+        <div class="form-inline">
+          <input type="text" id="s3-arch-dir" placeholder="directory (bucket root)" class="path-input">
+          <button type="button" class="mini-btn" onclick="mbOpenS3BucketBrowser()">Browse&hellip;</button>
+        </div>
+        <input type="hidden" name="path" id="s3-arch-path">
+        <select name="storage_class" title="Storage class for objects in this archive. Cannot be changed after the archive is added.">
+          <option value="">Bucket default class</option>
+          <option value="STANDARD">Standard</option>
+          <option value="STANDARD_IA">Standard-IA</option>
+          <option value="ONEZONE_IA">One Zone-IA</option>
+          <option value="INTELLIGENT_TIERING">Intelligent-Tiering</option>
+          <option value="GLACIER">Glacier</option>
+          <option value="GLACIER_IR">Glacier Instant Retrieval</option>
+          <option value="DEEP_ARCHIVE">Glacier Deep Archive</option>
+        </select>
+        <button type="submit" class="btn scan-btn">Add as Archive</button>
+      </form>
+
+      {% if s3c.connected %}
+        <div class="cloud-status-bound">Bound to {{ s3c.bucket_name }}</div>
+      {% elif s3c.last_error %}
+        <div class="error-banner">{{ s3c.last_error }}</div>
+      {% endif %}
+
+      {% if s3c.connected %}
+        <h3>Throughput Analysis</h3>
+        <p class="meta">Executes a 5MB transient I/O test to calculate effective bandwidth.</p>
+        <form method="post" action="/settings/s3-storage/test-speed" style="margin-bottom: 1rem;">
+          <button type="submit" class="btn" style="background: var(--bg-surface); border: 1px solid var(--border);">Execute I/O Diagnostic</button>
+        </form>
+
+        {% if s3c.last_speed_test_at %}
+          <dl class="settings-list" style="margin-bottom: 1.5rem;">
+            <dt>Timestamp</dt><dd>{{ s3c.last_speed_test_at }}</dd>
+            <dt>Raw Upload</dt><dd>{{ "%.1f"|format(s3c.upload_mbps) }} Mbps</dd>
+            <dt>Raw Download</dt><dd>{{ "%.1f"|format(s3c.download_mbps) }} Mbps</dd>
+            <dt>Effective Cap</dt>
+            <dd>
+              {{ "%.1f"|format(s3_effective_upload_mbps) }} Mbps ({{ "%.0f"|format(100 * (s3_effective_upload_mbps / s3c.upload_mbps if s3c.upload_mbps else 0)) }}% limit)
+            </dd>
+          </dl>
+        {% endif %}
+
+        <div class="section-divider">
+          <div class="flex-space-between">
+            <p class="meta text-small" style="margin: 0;">Removes the AWS credentials and the bucket bind. Archives you've added stay listed but can't be used until credentials are added again.</p>
+            <form method="post" action="/settings/s3-storage/disconnect" onsubmit="return confirm('Remove AWS credentials and sever bucket bind?');">
+              <button type="submit" class="btn danger-btn">Sever Bind</button>
+            </form>
+          </div>
+        </div>
+      {% endif %}
+    {% endif %}
+  </div>
+
+  <!--<div class="provider-panel" id="azure-provider">
+    <div class="provider-panel-header">
+      <h3>Microsoft Azure (Blob Storage)</h3>
+      <div class="provider-panel-status"><span class="status-pill status-pending">Not yet implemented</span></div>
+    </div>
+    <p class="meta">Azure Blob containers as archive destinations are planned but not available yet.</p>
+  </div>-->
+
+
+  <dialog id="bucket-browse-dialog" class="browse-dialog">
+    <div class="browse-dialog-header"><nav id="bucket-browse-breadcrumb" aria-label="Bucket path"></nav></div>
+    <div class="browse-dialog-body"><ul id="bucket-browse-list"></ul></div>
+    <form method="dialog" class="browse-dialog-footer">
+      <button type="submit" class="mini-btn">Cancel</button>
+      <button type="button" class="btn scan-btn" style="font-size: 0.8rem; padding: 0.3rem 0.75rem;" onclick="mbSelectBucketDir()">Select Directory</button>
+    </form>
+  </dialog>
+  <script>
+    let mbBucketRel = "";
+
+    function mbPrepareArchivePath(form) {
+      const bucket = document.getElementById("arch-bucket").value.trim();
+      const dir = document.getElementById("arch-dir").value.trim().replace(/^\/+|\/+$/g, "");
+      if (!bucket) return false;
+      document.getElementById("arch-path").value = "gs://" + bucket + (dir ? "/" + dir : "");
+      return true;
+    }
+
+    function mbOpenBucketBrowser() {
+      const bucket = document.getElementById("arch-bucket").value.trim();
+      if (!bucket) { alert("Enter or choose a bucket first."); return; }
+      mbLoadBucketFolders((document.getElementById("arch-dir").value || "").trim().replace(/^\/+|\/+$/g, ""));
+      document.getElementById("bucket-browse-dialog").showModal();
+    }
+
+    async function mbLoadBucketFolders(rel) {
+      const bucket = document.getElementById("arch-bucket").value.trim();
+      const list = document.getElementById("bucket-browse-list");
+      const response = await fetch("/settings/cloud-storage/browse?bucket=" + encodeURIComponent(bucket) + "&path=" + encodeURIComponent(rel));
+      if (!response.ok) {
+        const detail = (await response.json().catch(() => ({}))).detail || "Could not list this folder";
+        list.innerHTML = "";
+        const li = document.createElement("li");
+        li.className = "folder-empty"; li.textContent = detail;
+        list.appendChild(li);
+        if (rel) return mbLoadBucketFolders("");
+        return;
+      }
+      const data = await response.json();
+      mbBucketRel = data.path;
+
+      const crumb = document.getElementById("bucket-browse-breadcrumb");
+      crumb.innerHTML = "";
+      const root = document.createElement("button");
+      root.type = "button"; root.className = "mini-btn"; root.textContent = "gs://" + data.bucket;
+      root.onclick = () => mbLoadBucketFolders("");
+      crumb.appendChild(root);
+      let acc = "";
+      data.path.split("/").filter(Boolean).forEach(part => {
+        acc = acc ? acc + "/" + part : part;
+        const target = acc;
+        crumb.appendChild(document.createTextNode(" / "));
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "mini-btn"; b.textContent = part;
+        b.onclick = () => mbLoadBucketFolders(target);
+        crumb.appendChild(b);
+      });
+
+      list.innerHTML = "";
+      if (!data.folders.length) {
+        const li = document.createElement("li");
+        li.className = "folder-empty";
+        li.textContent = "No subfolders here. Select this directory, or type a new one in the field.";
+        list.appendChild(li);
+      }
+      data.folders.forEach(name => {
+        const li = document.createElement("li");
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "folder-list-item-btn"; b.textContent = name + "/";
+        b.onclick = () => mbLoadBucketFolders(data.path ? data.path + "/" + name : name);
+        li.appendChild(b);
+        list.appendChild(li);
+      });
+    }
+
+    function mbSelectBucketDir() {
+      document.getElementById("arch-dir").value = mbBucketRel;
+      document.getElementById("bucket-browse-dialog").close();
+    }
+  </script>
+
+  <dialog id="s3-bucket-browse-dialog" class="browse-dialog">
+    <div class="browse-dialog-header"><nav id="s3-bucket-browse-breadcrumb" aria-label="Bucket path"></nav></div>
+    <div class="browse-dialog-body"><ul id="s3-bucket-browse-list"></ul></div>
+    <form method="dialog" class="browse-dialog-footer">
+      <button type="submit" class="mini-btn">Cancel</button>
+      <button type="button" class="btn scan-btn" style="font-size: 0.8rem; padding: 0.3rem 0.75rem;" onclick="mbSelectS3BucketDir()">Select Directory</button>
+    </form>
+  </dialog>
+  <script>
+    let mbS3BucketRel = "";
+
+    function mbPrepareS3ArchivePath(form) {
+      const bucket = document.getElementById("s3-arch-bucket").value.trim();
+      const dir = document.getElementById("s3-arch-dir").value.trim().replace(/^\/+|\/+$/g, "");
+      if (!bucket) return false;
+      document.getElementById("s3-arch-path").value = "s3://" + bucket + (dir ? "/" + dir : "");
+      return true;
+    }
+
+    function mbOpenS3BucketBrowser() {
+      const bucket = document.getElementById("s3-arch-bucket").value.trim();
+      if (!bucket) { alert("Enter or choose a bucket first."); return; }
+      mbLoadS3BucketFolders((document.getElementById("s3-arch-dir").value || "").trim().replace(/^\/+|\/+$/g, ""));
+      document.getElementById("s3-bucket-browse-dialog").showModal();
+    }
+
+    async function mbLoadS3BucketFolders(rel) {
+      const bucket = document.getElementById("s3-arch-bucket").value.trim();
+      const list = document.getElementById("s3-bucket-browse-list");
+      const response = await fetch("/settings/s3-storage/browse?bucket=" + encodeURIComponent(bucket) + "&path=" + encodeURIComponent(rel));
+      if (!response.ok) {
+        const detail = (await response.json().catch(() => ({}))).detail || "Could not list this folder";
+        list.innerHTML = "";
+        const li = document.createElement("li");
+        li.className = "folder-empty"; li.textContent = detail;
+        list.appendChild(li);
+        if (rel) return mbLoadS3BucketFolders("");
+        return;
+      }
+      const data = await response.json();
+      mbS3BucketRel = data.path;
+
+      const crumb = document.getElementById("s3-bucket-browse-breadcrumb");
+      crumb.innerHTML = "";
+      const root = document.createElement("button");
+      root.type = "button"; root.className = "mini-btn"; root.textContent = "s3://" + data.bucket;
+      root.onclick = () => mbLoadS3BucketFolders("");
+      crumb.appendChild(root);
+      let acc = "";
+      data.path.split("/").filter(Boolean).forEach(part => {
+        acc = acc ? acc + "/" + part : part;
+        const target = acc;
+        crumb.appendChild(document.createTextNode(" / "));
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "mini-btn"; b.textContent = part;
+        b.onclick = () => mbLoadS3BucketFolders(target);
+        crumb.appendChild(b);
+      });
+
+      list.innerHTML = "";
+      if (!data.folders.length) {
+        const li = document.createElement("li");
+        li.className = "folder-empty";
+        li.textContent = "No subfolders here. Select this directory, or type a new one in the field.";
+        list.appendChild(li);
+      }
+      data.folders.forEach(name => {
+        const li = document.createElement("li");
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "folder-list-item-btn"; b.textContent = name + "/";
+        b.onclick = () => mbLoadS3BucketFolders(data.path ? data.path + "/" + name : name);
+        li.appendChild(b);
+        list.appendChild(li);
+      });
+    }
+
+    function mbSelectS3BucketDir() {
+      document.getElementById("s3-arch-dir").value = mbS3BucketRel;
+      document.getElementById("s3-bucket-browse-dialog").close();
+    }
+  </script>
+</section>
+
+<!-- Archives -->
+<section class="card" id="archives">
+  <h2>Archives</h2>
+  <p class="meta">Where backups are stored. Archives are added under Cloud Storage above (cloud and local). Library assignments are managed on the <a href="/libraries">Libraries</a> page.</p>
+  <div style="overflow-x: auto;">
+  <table>
+    <thead><tr><th>Name</th><th>Type</th><th>Path</th><th>Tier</th><th>Used by</th><th></th></tr></thead>
+    <tbody>
+      {% for a in all_archives %}
+      <tr>
+        <td>{{ a.location.name }}</td>
+        <td><span class="status-pill {% if a.location.location_type in ('gcs', 's3') %}status-running{% else %}status-pending{% endif %}">{% if a.location.location_type == 'gcs' %}Cloud (GCS){% elif a.location.location_type == 's3' %}Cloud (S3){% else %}Local{% endif %}</span></td>
+        <td><code>{{ a.location.path }}</code></td>
+        <td>{% if a.location.location_type in ('gcs', 's3') %}{{ (a.location.storage_class or 'bucket default') | capitalize }}{% else %}<span class="meta">&ndash;</span>{% endif %}</td>
+        <td>{% if a.libraries %}{{ a.libraries | join(', ') }}{% else %}<span class="meta">no libraries</span>{% endif %}</td>
+        <td>
+          {% if a.libraries %}
+          <span class="meta" title="Reassign or remove the libraries using it first">In use</span>
+          {% elif a.backup_count %}
+          <form method="post" action="/archives/{{ a.location.id }}/delete" onsubmit="return confirm('Force-remove archive &quot;{{ a.location.name }}&quot;? It has {{ a.backup_count }} recorded backup archive(s) - the bucket\'s own objects are NOT deleted, but this app will lose track of them and they will no longer be restorable from here.');">
+            <input type="hidden" name="next" value="/settings#archives">
+            <input type="hidden" name="force" value="true">
+            <button type="submit" class="mini-btn" style="color: var(--danger);">Force Remove</button>
+          </form>
+          {% else %}
+          <form method="post" action="/archives/{{ a.location.id }}/delete" onsubmit="return confirm('Remove archive &quot;{{ a.location.name }}&quot;? Backups already stored there are not deleted.');">
+            <input type="hidden" name="next" value="/settings#archives">
+            <button type="submit" class="mini-btn" style="color: var(--danger);">Remove</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="table-empty">No archives yet. Add a cloud or local archive under Cloud Storage above.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- Notifications -->
+<section class="card" id="notifications">
+  <h2>Notifications</h2>
+  <p class="meta">Browser, email, and Pushover notifications for backup and restore runs. Event toggles below apply to every enabled channel.</p>
+
+  {% set nc = notification_config %}
+  <form class="form-section" method="post" action="/settings/notifications">
+    <h3>Events</h3>
+    <div class="field-check">
+      <input type="checkbox" name="notify_backup_done" id="notify_backup_done" {% if not nc or nc.notify_backup_done %}checked{% endif %}>
+      <label for="notify_backup_done">Backup completed</label>
+    </div>
+    <div class="field-check">
+      <input type="checkbox" name="notify_backup_failed" id="notify_backup_failed" {% if not nc or nc.notify_backup_failed %}checked{% endif %}>
+      <label for="notify_backup_failed">Backup failed or partial</label>
+    </div>
+    <div class="field-check">
+      <input type="checkbox" name="notify_restore_done" id="notify_restore_done" {% if not nc or nc.notify_restore_done %}checked{% endif %}>
+      <label for="notify_restore_done">Restore completed</label>
+    </div>
+    <div class="field-check">
+      <input type="checkbox" name="notify_restore_failed" id="notify_restore_failed" {% if not nc or nc.notify_restore_failed %}checked{% endif %}>
+      <label for="notify_restore_failed">Restore failed or partial</label>
+    </div>
+
+    <h3>Browser</h3>
+    <div class="field-check">
+      <input type="checkbox" name="browser_enabled" id="browser_enabled" {% if nc and nc.browser_enabled %}checked{% endif %} onchange="if (this.checked) Notification.requestPermission();">
+      <label for="browser_enabled">Show in-browser notifications</label>
+    </div>
+    <span style="font-size: 0.8rem; color: var(--text-tertiary); display: block; margin: -0.5rem 0 1rem;">Your browser will ask for permission to show notifications the first time this is turned on.</span>
+
+    <h3>Email (SMTP)</h3>
+    <div class="field-check">
+      <input type="checkbox" name="email_enabled" id="email_enabled" {% if nc and nc.email_enabled %}checked{% endif %}>
+      <label for="email_enabled">Send email notifications</label>
+    </div>
+    <div class="field">
+      <label>SMTP host</label>
+      <input type="text" name="smtp_host" value="{{ nc.smtp_host if nc else '' }}" placeholder="smtp.gmail.com">
+    </div>
+    <div class="field">
+      <label>SMTP port</label>
+      <input type="number" name="smtp_port" value="{{ nc.smtp_port if nc else 465 }}">
+    </div>
+    <div class="field">
+      <label>SMTP username</label>
+      <input type="text" name="smtp_username" value="{{ nc.smtp_username if nc else '' }}">
+    </div>
+    <div class="field">
+      <label>SMTP password</label>
+      <input type="password" name="smtp_password" placeholder="{{ 'unchanged' if nc and nc.smtp_password else '' }}" autocomplete="new-password">
+    </div>
+    <div class="field">
+      <label>From address</label>
+      <input type="text" name="smtp_from" value="{{ nc.smtp_from if nc else '' }}">
+    </div>
+    <div class="field">
+      <label>To address(es)</label>
+      <input type="text" name="smtp_to" value="{{ nc.smtp_to if nc else '' }}" placeholder="you@example.com, other@example.com">
+    </div>
+
+    <h3>Pushover</h3>
+    <p class="meta">Register a free Application/API token at <a href="https://pushover.net/apps/build" target="_blank" rel="noopener">pushover.net/apps/build</a> - this app doesn't ship a shared one.</p>
+    <div class="field-check">
+      <input type="checkbox" name="pushover_enabled" id="pushover_enabled" {% if nc and nc.pushover_enabled %}checked{% endif %}>
+      <label for="pushover_enabled">Send Pushover notifications</label>
+    </div>
+    <div class="field">
+      <label>Application/API token</label>
+      <input type="text" name="pushover_api_token" value="{{ nc.pushover_api_token if nc else '' }}">
+    </div>
+    <div class="field">
+      <label>User key</label>
+      <input type="text" name="pushover_user_key" value="{{ nc.pushover_user_key if nc else '' }}">
+    </div>
+
+    <div class="flex-baseline">
+      <button type="submit" class="btn scan-btn">Save Notification Settings</button>
+    </div>
+  </form>
+  <div class="flex-baseline" style="margin-top: 1rem; gap: 0.5rem;">
+    <form method="post" action="/settings/notifications/test-email">
+      <button type="submit" class="mini-btn">Send test email</button>
+    </form>
+    <form method="post" action="/settings/notifications/test-pushover">
+      <button type="submit" class="mini-btn">Send test Pushover</button>
+    </form>
+  </div>
+</section>
+
+<!-- 2b. TLS / Domain -->
+<section class="card" id="tls-domain">
+  <h2>TLS / Domain</h2>
+  <p class="meta">The certificate nginx presents to browsers. Starts out self-signed (<code>./setup.sh --configure-tls</code>); paste your own cert/key once you have a domain to switch to it.</p>
+
+  <div class="provider-panel-status" style="margin-bottom: 1rem;">
+    {% if tls_config and tls_config.is_custom %}
+      <span class="status-pill status-done">Custom: {{ tls_config.domains.splitlines()[0] if tls_config.domains else "unnamed" }}</span>
+      {% if tls_config.cert_uploaded_at %}
+        <span class="meta text-mono" style="margin: 0;">uploaded {{ tls_config.cert_uploaded_at }}</span>
+      {% endif %}
+    {% else %}
+      <span class="status-pill status-pending">Self-signed</span>
+    {% endif %}
+  </div>
+
+  <h3>Domains</h3>
+  <p class="meta text-small">Which hosts nginx should answer to - one hostname or IP per line, e.g. <code>mediabridge.example.com</code>. Becomes nginx's <code>server_name</code> entries, so it only responds to what's listed here instead of matching everything (useful when the installed cert is a wildcard covering more than the one host you actually serve). Leave empty to answer to any hostname. nginx always listens on the standard 80/443 internally; mapping those to whatever host ports you want is a <code>docker-compose.yml</code> concern outside this app.</p>
+  <form class="toolbar" method="post" action="/settings/tls/domains">
+    <textarea name="domains" rows="4" class="text-mono" style="width: 100%; font-size: 0.8rem;" placeholder="mediabridge.example.com&#10;192.0.2.10">{{ tls_config.domains if tls_config and tls_config.domains else '' }}</textarea>
+    <label class="meta text-small" style="display: block; margin-top: 0.75rem;">External hosting address<br>
+      <input type="text" name="external_url" placeholder="e.g. https://192.0.2.10:9443" class="path-input" value="{{ tls_config.external_url if tls_config and tls_config.external_url else '' }}"></label>
+    <p class="meta text-small">Not used by nginx or matched against anything - just a record of where this instance is actually reached, in case that ever needs clarifying (a direct mapped port, or a domain fronted by an external proxy you manage separately).</p>
+    <button type="submit" class="btn scan-btn" style="margin-top: 0.5rem;">Save Domains</button>
+  </form>
+
+  <h3 style="margin-top: 1.5rem;">Certificate</h3>
+  <p class="meta text-small">Paste the PEM-encoded certificate and private key text below. Shared across all domains listed above.</p>
+  <form class="toolbar" method="post" action="/settings/tls/upload">
+    <div class="form-inline">
+      <label class="meta text-small">Certificate (PEM)<br>
+        <textarea name="cert_pem" rows="8" class="text-mono" style="width: 100%; font-size: 0.8rem;" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" required></textarea></label>
+      <label class="meta text-small">Private key (PEM)<br>
+        <textarea name="key_pem" rows="8" class="text-mono" style="width: 100%; font-size: 0.8rem;" placeholder="-----BEGIN PRIVATE KEY-----&#10;...&#10;-----END PRIVATE KEY-----" required></textarea></label>
+    </div>
+    <label class="meta text-small" style="display: block; margin-top: 0.75rem;">
+      <input type="checkbox" name="redirect_http" value="1" {% if not tls_config or tls_config.redirect_http %}checked{% endif %}>
+      Redirect HTTP to HTTPS
+    </label>
+    <button type="submit" class="btn scan-btn">Install Certificate</button>
+  </form>
+
+  {% if tls_config and tls_config.is_custom %}
+    <form method="post" action="/settings/tls/revert" style="margin-top: 1rem;">
+      <button type="submit" class="btn" style="background: var(--bg-surface); border: 1px solid var(--border);">Revert to Self-Signed</button>
+    </form>
+  {% endif %}
+</section>
+
+<!-- 5. System Information -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 2rem; margin-top: 3rem;">
+
+  <section class="card" id="catalog" style="margin-bottom: 0;">
+    <h2>Data Dictionary</h2>
+    <dl class="settings-list">
+      <dt>PostgreSQL Host</dt>
+      <dd>{{ database_host }}</dd>
+      <dt>Indexed Records</dt>
+      <dd>{{ movie_count }}</dd>
+      <dt>Index Cursor</dt>
+      <dd>{{ last_scanned_at or "Null" }}</dd>
+    </dl>
+
+    <div class="section-divider">
+      <h3 style="font-size: 0.9rem; color: var(--text-secondary); text-transform: uppercase; margin-top: 0;">Extension Topology</h3>
+      <dl class="settings-list" style="margin-bottom: 0;">
+        {% for mt, extensions in media_type_extensions.items() %}
+        <dt>{{ mt }}</dt>
+        <dd class="text-tiny text-tertiary">{{ extensions }}</dd>
+        {% endfor %}
+      </dl>
+    </div>
+
+    <form style="margin-top: 2rem;" method="post" action="/scan-and-redirect">
+      <button class="btn scan-btn" type="submit">Re-index Library</button>
+    </form>
+  </section>
+
+  <section class="card" id="service-control" style="margin-bottom: 0;">
+    <h2>Subsystem Control</h2>
+    <p class="meta">Signals process reboots via the internal supervisor API. Socket operations are abstracted.</p>
+
+    <div class="flex-col" style="margin-top: 1.5rem;">
+      <form method="post" action="/settings/services/worker/restart">
+        <button type="submit" class="btn" style="width: 100%; text-align: left; background: var(--bg-surface); border: 1px solid var(--border);">SIGTERM Worker Pool</button>
+      </form>
+    </div>
+
+    <p class="meta text-small" style="margin-top: 2rem;">For extended telemetry, launch <a href="http://localhost:5555" target="_blank" rel="noopener" style="color: var(--accent);">Flower</a>.</p>
+  </section>
+
+</div>
+{% endblock %}
