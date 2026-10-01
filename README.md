@@ -14,7 +14,7 @@ web: FastAPI + Jinja frontend to support user interface
 worker: Celery workers that do the actual file copy/backup/restore/verify work
 database: postgres container to support application as well as media catalog functions
 
-See [`docs/`](docs/) for setup instructions and a full architecture/data-model breakdown (or `CLAUDE.md` for the same content in a denser, agent-oriented form).
+See [`docs/`](docs/) for setup instructions and a full architecture/data-model breakdown.
 
 # License
 Copyright (c) 2026 Steve Ayers.

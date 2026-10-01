@@ -13,7 +13,7 @@ If that's not acceptable for a given contribution, please open an issue to discu
 
 ## Getting started
 
-See `README.md` for setup instructions and `CLAUDE.md` for an architecture/data-model overview.
+See `README.md` for setup instructions and `docs/README.md` for the architecture and data-model docs.
 
 - Run tests: `pytest` inside `web/` and `worker/` (each has its own `requirements-dev.txt`)
 - Keep `web/app/` and `worker/app/` in sync — they share a database but duplicate `models.py`/`config.py`/`db.py`/`fingerprint.py`/`gcs.py` as separate services, so schema or helper changes need to be mirrored in both.
